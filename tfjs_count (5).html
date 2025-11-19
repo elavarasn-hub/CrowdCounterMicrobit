@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TFJS Person Counter</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; }
+    #topbar { width:100%; background:#2b7cff; color:white; padding:8px 12px; box-sizing:border-box; }
+    #content { width:100%; max-width:720px; padding:8px; box-sizing:border-box; }
+    video { width:100%; height:auto; transform:scaleX(-1); } 
+    canvas { position:absolute; left:0; top:0; transform:scaleX(-1); }
+    .wrap { position:relative; width:100%; }
+    #status { margin-top:8px; font-weight:600; }
+    #count { font-size:22px; margin-top:6px; }
+    #log { margin-top:6px; font-size:12px; color:#444; }
+    button { margin:6px; padding:8px 12px; }
+  </style>
+</head>
+<body>
+  <div id="topbar">TFJS Person Counter — Local WebViewer</div>
+  <div id="content">
+    <div class="wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="status">Status: <span id="sttxt">loading model…</span></div>
+    <div id="count">Count: <span id="cnt">0</span></div>
+    <div id="controls">
+      <label>Detection interval (ms): <input id="interval" type="number" value="600" style="width:80px" /></label>
+      <button id="btnStart">Start</button>
+      <button id="btnStop">Stop</button>
+      <button id="btnSendCount">Send count to AppInventor</button>
+    </div>
+    <div id="log">Tip: From Kodular/App Inventor call <code>WebViewer.RunJavaScript("setThreshold(5);")</code> to set threshold.</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+  <script>
+    let video = document.getElementById('video');
+    let overlay = document.getElementById('overlay');
+    let ctx = overlay.getContext('2d');
+    let cntEl = document.getElementById('cnt');
+    let st = document.getElementById('sttxt');
+    let model = null;
+    let running = false;
+    let detectInterval = null;
+    let lastCount = 0;
+    let threshold = 10; // default; App Inventor can call setThreshold(n)
+    const MIN_SCORE = 0.5; // detection confidence threshold
+
+    async function setupCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          video.play();
+          // size canvas to video
+          overlay.width = video.videoWidth;
+          overlay.height = video.videoHeight;
+          resolve();
+        };
+      });
+    }
+
+    async function loadModel() {
+      st.innerText = 'loading coco-ssd model...';
+      model = await cocoSsd.load();
+      st.innerText = 'model loaded';
+    }
+
+    async function detectFrame() {
+      if (!model) return;
+      if (video.videoWidth === 0) return;
+      const predictions = await model.detect(video);
+      // draw overlay
+      ctx.clearRect(0,0,overlay.width, overlay.height);
+      let personCount = 0;
+      for (let i=0;i<predictions.length;i++) {
+        const p = predictions[i];
+        if (p.class === 'person' && p.score >= MIN_SCORE) {
+          personCount++;
+          const [x,y,w,h] = p.bbox;
+          ctx.lineWidth = Math.max(2, Math.floor(Math.min(overlay.width,overlay.height) * 0.0025));
+          ctx.strokeStyle = 'red';
+          ctx.strokeRect(x,y,w,h);
+          ctx.font = '18px Arial';
+          ctx.fillStyle = 'red';
+          ctx.fillText(p.class + ' ' + (p.score*100).toFixed(0) + '%', x+4, y+18);
+        }
+      }
+      cntEl.innerText = personCount;
+      // send count to App Inventor / Kodular if changed
+      if (personCount !== lastCount) {
+        lastCount = personCount;
+        // Try AppInventor bridge if available
+        try {
+          if (typeof AppInventor !== 'undefined' && AppInventor.setWebViewString) {
+            AppInventor.setWebViewString(String(personCount));
+          } else if (window.android && window.android.setWebViewString) {
+            // some wrappers expose android
+            window.android.setWebViewString(String(personCount));
+          } else {
+            // fallback: update document.title (App Inventor can read WebViewer string via evaluate javascript or title polling)
+            document.title = 'count:' + String(personCount);
+          }
+        } catch(e) {
+          console.log('bridge send failed', e);
+        }
+      }
+      // threshold visual
+      if (personCount >= threshold) {
+        st.innerText = 'ALERT: threshold reached ('+personCount+ ' >= ' + threshold + ')';
+      } else {
+        st.innerText = 'OK: ' + personCount + ' / ' + threshold;
+      }
+    }
+
+    function startDetection() {
+      if (running) return;
+      running = true;
+      const ms = Math.max(200, parseInt(document.getElementById('interval').value) || 600);
+      detectInterval = setInterval(detectFrame, ms);
+      st.innerText = 'running';
+    }
+
+    function stopDetection() {
+      running = false;
+      if (detectInterval) clearInterval(detectInterval);
+      st.innerText = 'stopped';
+    }
+
+    // exposed to App Inventor / Kodular via RunJavaScript
+    function setThreshold(n) {
+      threshold = parseInt(n) || threshold;
+      console.log('threshold set to', threshold);
+      st.innerText = 'threshold set to ' + threshold;
+      return threshold;
+    }
+
+    // Allow App Inventor to call this JS function to request a manual send
+    function sendCountNow() {
+      try {
+        if (typeof AppInventor !== 'undefined' && AppInventor.setWebViewString) {
+          AppInventor.setWebViewString(String(lastCount));
+        } else if (window.android && window.android.setWebViewString) {
+          window.android.setWebViewString(String(lastCount));
+        } else {
+          document.title = 'count:' + String(lastCount);
+        }
+      } catch(e){ console.log(e); }
+    }
+
+    document.getElementById('btnStart').addEventListener('click', startDetection);
+    document.getElementById('btnStop').addEventListener('click', stopDetection);
+    document.getElementById('btnSendCount').addEventListener('click', sendCountNow);
+
+    // init
+    (async ()=>{
+      try {
+        await setupCamera();
+        await loadModel();
+        // auto-start detection
+        startDetection();
+      } catch(err) {
+        st.innerText = 'ERROR: ' + err.message;
+        console.error(err);
+      }
+    })();
+
+    // expose functions to global scope (so RunJavaScript can call)
+    window.setThreshold = setThreshold;
+    window.sendCountNow = sendCountNow;
+  </script>
+</body>
+</html>
