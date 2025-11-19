@@ -1,0 +1,6 @@
+{
+  "appId": "com.elavarasan.crowdcounter",
+  "appName": "crowdcounter-microbit",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
