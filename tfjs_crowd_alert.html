@@ -5,201 +5,368 @@
   <title>TFJS Crowd Counter + Alert</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- TFJS + COCO-SSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <!-- TensorFlow.js + COCO-SSD model from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
   <style>
-    body { font-family: Arial, sans-serif; background:#111; color:#eee; text-align:center; padding:10px; }
-    h1 { font-size:22px; margin-bottom:6px; }
-    #videoContainer { position:relative; display:inline-block; margin-top:10px; }
-    #videoElement, #overlayCanvas {
-      width:320px; height:240px; border-radius:8px; border:2px solid #444; background:#000;
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
+      color: #f0f0f0;
+      text-align: center;
     }
-    #overlayCanvas { position:absolute; top:0; left:0; pointer-events:none; }
-    #cnt { font-weight:bold; color:#00e676; font-size:20px; }
-    #alertBox {
-      display:none; margin-top:14px; padding:12px; background:#ffdddd;
-      border:2px solid #ff0000; color:#b00000; font-size:22px; font-weight:bold;
-      border-radius:8px;
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 16px;
     }
-    #alertBox.blink { animation: blink 0.8s steps(1,start) infinite; }
-    @keyframes blink { 50% { opacity:0; } }
-    button {
-      padding:8px 14px; font-size:15px; border-radius:6px;
-      border:none; cursor:pointer; margin:5px;
+    h1 {
+      margin: 12px 0 18px;
+      font-size: 1.6rem;
     }
-    #setThresholdBtn { background:#388e3c; color:#fff; }
-    #muteBtn { background:#666; color:#fff; }
-    #restartBtn { background:#1976d2; color:#fff; }
+    #alertBanner {
+      display: none;
+      background: #ff0033;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-weight: 700;
+      box-shadow: 0 0 10px rgba(255,0,0,0.7);
+      animation: blink 0.9s linear infinite;
+    }
+    @keyframes blink {
+      0%, 50%, 100% { opacity: 1; }
+      25%, 75% { opacity: 0.3; }
+    }
+    #videoContainer {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 16px rgba(0,0,0,0.8);
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* mirror so it feels natural on front camera */
+    }
+    #overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .info {
+      margin-top: 14px;
+      font-size: 1.1rem;
+    }
+    .info span#cnt {
+      font-weight: 700;
+      color: #00ff4c;
+    }
+    .controls {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      align-items: center;
+    }
+    .controls label {
+      font-size: 0.95rem;
+      margin-right: 4px;
+    }
+    .controls input[type="number"] {
+      width: 60px;
+      padding: 6px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #222;
+      color: #fff;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      transition: transform 0.05s ease, box-shadow 0.05s ease, background 0.1s ease;
+    }
+    .btn:active {
+      transform: scale(0.97);
+      box-shadow: 0 0 0 rgba(0,0,0,0);
+    }
+    .btn-green {
+      background: #28a745;
+      color: #fff;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+    }
+    .btn-blue {
+      background: #007bff;
+      color: #fff;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+    }
+    .btn-grey {
+      background: #555;
+      color: #f0f0f0;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
+    }
+    #statusText {
+      margin-top: 10px;
+      font-size: 0.95rem;
+      color: #ccc;
+    }
+
+    @media (max-width: 480px) {
+      h1 { font-size: 1.3rem; }
+    }
   </style>
 </head>
+
 <body>
+  <div class="page">
+    <div id="alertBanner">ALERT – CROWD DANGER</div>
 
-<h1>TFJS Crowd Counter + Alert</h1>
+    <h1>TFJS Crowd Counter + Alert</h1>
 
-<div id="videoContainer">
-  <video id="videoElement" autoplay playsinline muted></video>
-  <canvas id="overlayCanvas"></canvas>
-</div>
+    <div id="videoContainer">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
 
-<div style="margin-top:10px; font-size:18px;">
-  People Count: <span id="cnt">0</span>
-</div>
+    <div class="info">
+      People Count: <span id="cnt">0</span>
+    </div>
 
-<div style="margin-top:10px;">
-  Threshold:
-  <input id="thresholdInput" type="number" value="4" min="1" style="width:60px; text-align:center;">
-  <button id="setThresholdBtn">Set Threshold</button>
-</div>
+    <div class="controls">
+      <label for="thresholdInput">Threshold:</label>
+      <input id="thresholdInput" type="number" min="1" value="4" />
+      <button id="btnSetThreshold" class="btn btn-green">Set Threshold</button>
+      <button id="btnMute" class="btn btn-grey">Mute Sound</button>
+      <button id="btnRestart" class="btn btn-blue">Restart</button>
+    </div>
 
-<div>
-  <button id="muteBtn">Mute Sound</button>
-  <button id="restartBtn">Restart</button>
-</div>
+    <div id="statusText">Tap “Restart” to start camera &amp; detection…</div>
+  </div>
 
-<div id="alertBox">ALERT: CROWD DANGER</div>
+  <!-- Beep sound (you can replace the URL with your own beep file) -->
+  <audio id="beepSound" preload="auto">
+    <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
+  </audio>
 
-<div id="status" style="margin-top:8px; font-size:13px; color:#aaa;">Loading model…</div>
+  <script>
+    // ===== Global elements =====
+    const video       = document.getElementById('video');
+    const overlay     = document.getElementById('overlay');
+    const ctx         = overlay.getContext('2d');
+    const cntEl       = document.getElementById('cnt');
+    const alertBanner = document.getElementById('alertBanner');
+    const statusText  = document.getElementById('statusText');
+    const thresholdInput = document.getElementById('thresholdInput');
+    const btnSetThreshold = document.getElementById('btnSetThreshold');
+    const btnMute     = document.getElementById('btnMute');
+    const btnRestart  = document.getElementById('btnRestart');
+    const beepSound   = document.getElementById('beepSound');
 
-<audio id="beepSound" preload="auto">
-  <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
-</audio>
+    // ===== Detection settings =====
+    let model = null;
+    let running = false;
+    let detectionIntervalMs = 600;   // how often to run model
+    let threshold = 4;               // default, can change via UI
+    let muted = false;
+    let alertActive = false;
 
-<script>
-let model = null;
-let currentThreshold = 4;
-let alertActive = false;   // now follows live count: on when >= threshold, off when < threshold
-let muted = false;
+    // Simple smoothing: average of last few counts
+    const historySize = 4;
+    let countHistory = [];
 
-const video     = document.getElementById("videoElement");
-const canvas    = document.getElementById("overlayCanvas");
-const ctx       = canvas.getContext("2d");
-const cntEl     = document.getElementById("cnt");
-const alertBox  = document.getElementById("alertBox");
-const beepEl    = document.getElementById("beepSound");
-const statusEl  = document.getElementById("status");
-const thrInput  = document.getElementById("thresholdInput");
-const setThrBtn = document.getElementById("setThresholdBtn");
-const muteBtn   = document.getElementById("muteBtn");
-const restartBtn= document.getElementById("restartBtn");
-
-// ---- UI handlers ----
-setThrBtn.onclick = () => {
-  const v = parseInt(thrInput.value);
-  if (!isNaN(v) && v > 0) {
-    currentThreshold = v;
-    statusEl.textContent = "Threshold set to " + v;
-  } else {
-    statusEl.textContent = "Please enter a valid positive number.";
-  }
-};
-
-muteBtn.onclick = () => {
-  muted = !muted;
-  muteBtn.textContent = muted ? "Unmute Sound" : "Mute Sound";
-  if (muted && beepEl) {
-    try { beepEl.pause(); beepEl.currentTime = 0; } catch(e) {}
-  }
-};
-
-restartBtn.onclick = () => {
-  // full reset
-  location.reload();
-};
-
-// ---- Alert helpers ----
-function triggerAlertOnceBeep() {
-  alertBox.style.display = "block";
-  alertBox.classList.add("blink");
-  if (!muted && beepEl) {
-    try {
-      beepEl.currentTime = 0;
-      beepEl.play();
-    } catch(e) {}
-  }
-}
-
-function clearAlert() {
-  alertBox.style.display = "none";
-  alertBox.classList.remove("blink");
-}
-
-// ---- Count + alert logic ----
-function updateCountDisplay(n) {
-  cntEl.textContent = n;
-
-  if (n >= currentThreshold && !alertActive) {
-    // newly crossed into alert zone
-    alertActive = true;
-    triggerAlertOnceBeep();
-  } else if (n < currentThreshold && alertActive) {
-    // went back to safe zone -> turn alert OFF
-    alertActive = false;
-    clearAlert();
-  }
-}
-
-// ---- Camera + model ----
-async function setupCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert("Camera not supported in this browser.");
-    return;
-  }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" },
-    audio: false
-  });
-  video.srcObject = stream;
-  return new Promise(res => {
-    video.onloadedmetadata = () => {
-      video.play();
-      canvas.width  = video.videoWidth  || 320;
-      canvas.height = video.videoHeight || 240;
-      res();
-    };
-  });
-}
-
-async function main() {
-  try {
-    statusEl.textContent = "Loading COCO-SSD model…";
-    model = await cocoSsd.load();
-    statusEl.textContent = "Model loaded. Starting camera…";
-    await setupCamera();
-    statusEl.textContent = "Running detection…";
-    detect();
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = "Error: " + err.message;
-  }
-}
-
-async function detect() {
-  if (!model || video.readyState !== 4) {
-    requestAnimationFrame(detect);
-    return;
-  }
-  const preds = await model.detect(video);
-  let count = 0;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  preds.forEach(p => {
-    if (p.class === "person" && p.score > 0.5) {
-      count++;
-      const [x, y, w, h] = p.bbox;
-      ctx.strokeStyle = "#00e676";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
+    function setStatus(msg) {
+      if (statusText) statusText.textContent = msg;
+      console.log(msg);
     }
-  });
 
-  updateCountDisplay(count);
-  requestAnimationFrame(detect);
-}
+    function updateThresholdFromInput() {
+      const v = parseInt(thresholdInput.value, 10);
+      if (!Number.isNaN(v) && v > 0) {
+        threshold = v;
+        setStatus("Threshold set to " + threshold);
+      } else {
+        thresholdInput.value = threshold;
+      }
+    }
 
-window.addEventListener("load", main);
-</script>
+    btnSetThreshold.addEventListener('click', updateThresholdFromInput);
 
+    btnMute.addEventListener('click', () => {
+      muted = !muted;
+      btnMute.textContent = muted ? "Unmute Sound" : "Mute Sound";
+      setStatus(muted ? "Sound muted" : "Sound unmuted");
+    });
+
+    btnRestart.addEventListener('click', () => {
+      startApp();
+    });
+
+    // ===== Camera handling =====
+    async function stopCamera() {
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+    }
+
+    async function startCamera() {
+      await stopCamera();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        video.srcObject = stream;
+
+        await new Promise(resolve => {
+          video.onloadedmetadata = () => {
+            // Match canvas to video size
+            overlay.width  = video.videoWidth || 640;
+            overlay.height = video.videoHeight || 480;
+            resolve();
+          };
+        });
+
+        setStatus("Camera started. Loading model…");
+      } catch (err) {
+        console.error(err);
+        setStatus("Camera error: " + err.message);
+        alert("Camera error: " + err.message);
+        throw err;
+      }
+    }
+
+    // ===== Alert handling =====
+    function triggerAlert() {
+      alertBanner.style.display = "inline-block";
+      if (!muted && beepSound) {
+        try {
+          beepSound.currentTime = 0;
+          const p = beepSound.play();
+          if (p && typeof p.then === "function") {
+            p.catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+
+    function clearAlert() {
+      alertBanner.style.display = "none";
+    }
+
+    function updateCountDisplay(count) {
+      cntEl.textContent = String(count);
+    }
+
+    // ===== Detection loop =====
+    async function detectLoop() {
+      if (!running) return;
+      if (!model || !video.videoWidth) {
+        setTimeout(detectLoop, detectionIntervalMs);
+        return;
+      }
+
+      try {
+        // Draw current frame to canvas
+        ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
+
+        // Run detection
+        const predictions = await model.detect(video);
+        let personCount = 0;
+
+        // Draw boxes
+        ctx.lineWidth = 2;
+        ctx.font = "14px Arial";
+        ctx.textBaseline = "top";
+
+        predictions.forEach(p => {
+          if (p.class === "person" && p.score >= 0.5) {
+            personCount++;
+            const [x, y, w, h] = p.bbox;
+            ctx.strokeStyle = "rgba(0, 255, 0, 0.9)";
+            ctx.fillStyle   = "rgba(0, 255, 0, 0.3)";
+            ctx.strokeRect(x, y, w, h);
+            ctx.fillRect(x, y, w, 18);
+            ctx.fillStyle = "#000";
+            ctx.fillText(`Person ${Math.round(p.score * 100)}%`, x + 4, y + 2);
+          }
+        });
+
+        // Smoothing
+        countHistory.push(personCount);
+        if (countHistory.length > historySize) countHistory.shift();
+        const avg = countHistory.reduce((a,b) => a + b, 0) / countHistory.length;
+        const smoothCount = Math.round(avg);
+
+        updateCountDisplay(smoothCount);
+
+        // Alert logic
+        if (smoothCount >= threshold && !alertActive) {
+          alertActive = true;
+          triggerAlert();
+        } else if (smoothCount < threshold && alertActive) {
+          alertActive = false;
+          clearAlert();
+        }
+      } catch (err) {
+        console.error("Detection error:", err);
+        setStatus("Detection error: " + err.message);
+      }
+
+      setTimeout(detectLoop, detectionIntervalMs);
+    }
+
+    // ===== App startup =====
+    async function startApp() {
+      try {
+        running = false;
+        await stopCamera();
+        alertActive = false;
+        clearAlert();
+        countHistory = [];
+        updateCountDisplay(0);
+        setStatus("Requesting camera…");
+
+        await startCamera();
+
+        if (!model) {
+          setStatus("Loading model (first time)…");
+          model = await cocoSsd.load();
+        }
+
+        setStatus("Running detection…");
+        running = true;
+        detectLoop();
+      } catch (e) {
+        // error already shown in camera/model loaders
+        running = false;
+      }
+    }
+
+    // Do not auto-start on mobile; user must tap Restart.
+    setStatus("Tap “Restart” to begin (allow camera when asked).");
+  </script>
 </body>
 </html>
