@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TFJS Crowd Counter + Alert</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- TFJS + COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; background:#111; color:#eee; text-align:center; padding:10px; }
+    h1 { font-size:22px; margin-bottom:6px; }
+    #videoContainer { position:relative; display:inline-block; margin-top:10px; }
+    #videoElement, #overlayCanvas {
+      width:320px; height:240px; border-radius:8px; border:2px solid #444; background:#000;
+    }
+    #overlayCanvas { position:absolute; top:0; left:0; pointer-events:none; }
+    #cnt { font-weight:bold; color:#00e676; font-size:20px; }
+    #alertBox {
+      display:none; margin-top:14px; padding:12px; background:#ffdddd;
+      border:2px solid #ff0000; color:#b00000; font-size:22px; font-weight:bold;
+      border-radius:8px;
+    }
+    #alertBox.blink { animation: blink 0.8s steps(1,start) infinite; }
+    @keyframes blink { 50% { opacity:0; } }
+    button {
+      padding:8px 14px; font-size:15px; border-radius:6px;
+      border:none; cursor:pointer; margin:5px;
+    }
+    #setThresholdBtn { background:#388e3c; color:#fff; }
+    #muteBtn { background:#666; color:#fff; }
+    #restartBtn { background:#1976d2; color:#fff; }
+  </style>
+</head>
+<body>
+
+<h1>TFJS Crowd Counter + Alert</h1>
+
+<div id="videoContainer">
+  <video id="videoElement" autoplay playsinline muted></video>
+  <canvas id="overlayCanvas"></canvas>
+</div>
+
+<div style="margin-top:10px; font-size:18px;">
+  People Count: <span id="cnt">0</span>
+</div>
+
+<div style="margin-top:10px;">
+  Threshold:
+  <input id="thresholdInput" type="number" value="4" min="1" style="width:60px; text-align:center;">
+  <button id="setThresholdBtn">Set Threshold</button>
+</div>
+
+<div>
+  <button id="muteBtn">Mute Sound</button>
+  <button id="restartBtn">Restart</button>
+</div>
+
+<div id="alertBox">ALERT: CROWD DANGER</div>
+
+<div id="status" style="margin-top:8px; font-size:13px; color:#aaa;">Loading model…</div>
+
+<audio id="beepSound" preload="auto">
+  <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
+</audio>
+
+<script>
+let model = null;
+let currentThreshold = 4;
+let alertActive = false;   // now follows live count: on when >= threshold, off when < threshold
+let muted = false;
+
+const video     = document.getElementById("videoElement");
+const canvas    = document.getElementById("overlayCanvas");
+const ctx       = canvas.getContext("2d");
+const cntEl     = document.getElementById("cnt");
+const alertBox  = document.getElementById("alertBox");
+const beepEl    = document.getElementById("beepSound");
+const statusEl  = document.getElementById("status");
+const thrInput  = document.getElementById("thresholdInput");
+const setThrBtn = document.getElementById("setThresholdBtn");
+const muteBtn   = document.getElementById("muteBtn");
+const restartBtn= document.getElementById("restartBtn");
+
+// ---- UI handlers ----
+setThrBtn.onclick = () => {
+  const v = parseInt(thrInput.value);
+  if (!isNaN(v) && v > 0) {
+    currentThreshold = v;
+    statusEl.textContent = "Threshold set to " + v;
+  } else {
+    statusEl.textContent = "Please enter a valid positive number.";
+  }
+};
+
+muteBtn.onclick = () => {
+  muted = !muted;
+  muteBtn.textContent = muted ? "Unmute Sound" : "Mute Sound";
+  if (muted && beepEl) {
+    try { beepEl.pause(); beepEl.currentTime = 0; } catch(e) {}
+  }
+};
+
+restartBtn.onclick = () => {
+  // full reset
+  location.reload();
+};
+
+// ---- Alert helpers ----
+function triggerAlertOnceBeep() {
+  alertBox.style.display = "block";
+  alertBox.classList.add("blink");
+  if (!muted && beepEl) {
+    try {
+      beepEl.currentTime = 0;
+      beepEl.play();
+    } catch(e) {}
+  }
+}
+
+function clearAlert() {
+  alertBox.style.display = "none";
+  alertBox.classList.remove("blink");
+}
+
+// ---- Count + alert logic ----
+function updateCountDisplay(n) {
+  cntEl.textContent = n;
+
+  if (n >= currentThreshold && !alertActive) {
+    // newly crossed into alert zone
+    alertActive = true;
+    triggerAlertOnceBeep();
+  } else if (n < currentThreshold && alertActive) {
+    // went back to safe zone -> turn alert OFF
+    alertActive = false;
+    clearAlert();
+  }
+}
+
+// ---- Camera + model ----
+async function setupCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("Camera not supported in this browser.");
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
+  video.srcObject = stream;
+  return new Promise(res => {
+    video.onloadedmetadata = () => {
+      video.play();
+      canvas.width  = video.videoWidth  || 320;
+      canvas.height = video.videoHeight || 240;
+      res();
+    };
+  });
+}
+
+async function main() {
+  try {
+    statusEl.textContent = "Loading COCO-SSD model…";
+    model = await cocoSsd.load();
+    statusEl.textContent = "Model loaded. Starting camera…";
+    await setupCamera();
+    statusEl.textContent = "Running detection…";
+    detect();
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "Error: " + err.message;
+  }
+}
+
+async function detect() {
+  if (!model || video.readyState !== 4) {
+    requestAnimationFrame(detect);
+    return;
+  }
+  const preds = await model.detect(video);
+  let count = 0;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  preds.forEach(p => {
+    if (p.class === "person" && p.score > 0.5) {
+      count++;
+      const [x, y, w, h] = p.bbox;
+      ctx.strokeStyle = "#00e676";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+    }
+  });
+
+  updateCountDisplay(count);
+  requestAnimationFrame(detect);
+}
+
+window.addEventListener("load", main);
+</script>
+
+</body>
+</html>
