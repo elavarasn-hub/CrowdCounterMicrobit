@@ -1,487 +1,234 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>TFJS Crowd Counter + micro:bit Auto-Connect</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TFJS Crowd Counter + micro:bit (Auto-Connect)</title>
 
-  <!-- TensorFlow.js + COCO-SSD model -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111;
-      color: #f0f0f0;
-      text-align: center;
-    }
-    .page {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      align-items: center;
-      padding: 16px;
-    }
-    h1 {
-      margin: 12px 0 6px;
-      font-size: 1.6rem;
-    }
-    #subtitle {
-      font-size: 0.9rem;
-      color: #ccc;
-      margin-bottom: 10px;
-    }
-    #alertBanner {
-      display: none;
-      background: #ff0033;
-      color: #fff;
-      padding: 10px 16px;
-      border-radius: 8px;
-      margin-bottom: 12px;
-      font-weight: 700;
-      box-shadow: 0 0 10px rgba(255,0,0,0.7);
-      animation: blink 0.9s linear infinite;
-    }
-    @keyframes blink {
-      0%, 50%, 100% { opacity: 1; }
-      25%, 75% { opacity: 0.3; }
-    }
-    #videoContainer {
-      position: relative;
-      width: 100%;
-      max-width: 640px;
-      aspect-ratio: 4 / 3;
-      background: #000;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 0 16px rgba(0,0,0,0.8);
-    }
-    #video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* mirror */
-    }
-    #overlay {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-    .info {
-      margin-top: 14px;
-      font-size: 1.1rem;
-    }
-    .info span#cnt {
-      font-weight: 700;
-      color: #00ff4c;
-    }
-    .controls {
-      margin-top: 14px;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-      align-items: center;
-    }
-    .controls label {
-      font-size: 0.95rem;
-      margin-right: 4px;
-    }
-    .controls input[type="number"] {
-      width: 60px;
-      padding: 6px;
-      border-radius: 6px;
-      border: 1px solid #555;
-      background: #222;
-      color: #fff;
-      text-align: center;
-      font-size: 0.95rem;
-    }
-    .btn {
-      border: none;
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      outline: none;
-      transition: transform 0.05s ease, box-shadow 0.05s ease, background 0.1s ease;
-    }
-    .btn:active {
-      transform: scale(0.97);
-      box-shadow: 0 0 0 rgba(0,0,0,0);
-    }
-    .btn-green {
-      background: #28a745;
-      color: #fff;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-    }
-    .btn-blue {
-      background: #007bff;
-      color: #fff;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-    }
-    .btn-grey {
-      background: #555;
-      color: #f0f0f0;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-    }
-    .btn-orange {
-      background: #ff9800;
-      color: #fff;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-    }
-    #statusText {
-      margin-top: 10px;
-      font-size: 0.9rem;
-      color: #ccc;
-    }
-    #microbitStatus {
-      margin-top: 4px;
-      font-size: 0.85rem;
-      color: #8cd2ff;
-    }
-    @media (max-width: 480px) {
-      h1 { font-size: 1.3rem; }
-    }
-  </style>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: #eee;
+  text-align: center;
+  padding: 10px;
+}
+h1 { font-size: 28px; margin-bottom: 6px; }
+#video {
+  width: 95%;
+  max-width: 430px;
+  border-radius: 15px;
+  border: 2px solid #444;
+  background: #000;
+}
+button {
+  padding: 10px 18px;
+  border: none;
+  margin: 5px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.green { background: #2ecc71; color: #fff; }
+.blue { background: #3498db; color: #fff; }
+.orange { background: #f39c12; color: #fff; }
+.gray { background: #7f8c8d; color: #fff; }
+
+#alertBox {
+  margin-top: 12px;
+  padding: 15px;
+  display: none;
+  background: #ff0000;
+  color: white;
+  font-size: 22px;
+  font-weight: bold;
+  border-radius: 12px;
+  animation: blinker 0.55s linear infinite;
+}
+@keyframes blinker {
+  50% { opacity: 0.25; }
+}
+</style>
 </head>
-
 <body>
-  <div class="page">
-    <div id="alertBanner">ALERT – CROWD DANGER</div>
 
-    <h1>TFJS Crowd Counter + micro:bit (Auto-Connect)</h1>
-    <div id="subtitle">Counts people with AI and sends danger signal to micro:bit.</div>
+<h1>TFJS Crowd Counter + micro:bit<br>(Auto-Connect)</h1>
+<p>Counts people with AI and sends danger signal to micro:bit.</p>
 
-    <div id="videoContainer">
-      <video id="video" autoplay playsinline muted></video>
-      <canvas id="overlay"></canvas>
-    </div>
+<video id="video" autoplay playsinline></video>
 
-    <div class="info">
-      People Count: <span id="cnt">0</span>
-    </div>
+<h2>People Count: <span id="cnt" style="color:#0f0">0</span></h2>
 
-    <div class="controls">
-      <label for="thresholdInput">Threshold:</label>
-      <input id="thresholdInput" type="number" min="1" value="4" />
-      <button id="btnSetThreshold" class="btn btn-green">Set Threshold</button>
-      <button id="btnMute" class="btn btn-grey">Mute Sound</button>
-      <button id="btnRestart" class="btn btn-blue">Restart (Camera + micro:bit)</button>
-      <button id="btnConnectMicrobit" class="btn btn-orange">Connect micro:bit (manual)</button>
-    </div>
+<div>
+  Threshold:
+  <input id="threshold" type="number" value="3" style="width:65px;font-size:18px;text-align:center;">
+  <button class="green" onclick="setThreshold()">Set Threshold</button>
+</div>
 
-    <div id="statusText">Tap “Restart (Camera + micro:bit)” and allow camera. Chrome will then ask for micro:bit.</div>
-    <div id="microbitStatus">micro:bit: Not connected</div>
-  </div>
+<button class="gray" onclick="toggleSound()">Mute Sound</button>
+<button class="blue" onclick="restartAll()">Restart (Camera + micro:bit)</button>
+<button class="orange" onclick="connectMicrobit()">Connect micro:bit (manual)</button>
 
-  <!-- Alarm sound -->
-  <audio id="beepSound" preload="auto">
-    <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
-  </audio>
+<div id="alertBox">⚠ ALERT — Danger Crowd Level! ⚠</div>
 
-  <script>
-    // ====== DOM references ======
-    const video       = document.getElementById('video');
-    const overlay     = document.getElementById('overlay');
-    const ctx         = overlay.getContext('2d');
-    const cntEl       = document.getElementById('cnt');
-    const alertBanner = document.getElementById('alertBanner');
-    const statusText  = document.getElementById('statusText');
-    const thresholdInput      = document.getElementById('thresholdInput');
-    const btnSetThreshold     = document.getElementById('btnSetThreshold');
-    const btnMute             = document.getElementById('btnMute');
-    const btnRestart          = document.getElementById('btnRestart');
-    const btnConnectMicrobit  = document.getElementById('btnConnectMicrobit');
-    const microbitStatus      = document.getElementById('microbitStatus');
-    const beepSound           = document.getElementById('beepSound');
+<p id="status" style="margin-top:12px;">Running detection…</p>
+<p id="mb" style="margin-top:4px;color:#6cf;">micro:bit: Not connected</p>
 
-    // ====== Detection settings ======
-    let model = null;
-    let running = false;
-    let detectionIntervalMs = 600;
-    let threshold = 4;
-    let muted = false;
-    let alertActive = false;
-    let alarmTimer = null;      // for continuous alarm loop
+<script>
+let model;
+let video = document.getElementById("video");
+let cntSpan = document.getElementById("cnt");
+let statusText = document.getElementById("status");
+let mbText = document.getElementById("mb");
+let threshold = 3;
+let soundMuted = false;
 
-    const historySize = 4;
-    let countHistory = [];
+let alertSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+alertSound.loop = true;
 
-    function setStatus(msg) {
-      statusText.textContent = msg;
-      console.log(msg);
+// micro:bit Bluetooth UUIDs (UART)
+const NUS_SERVICE_UUID  = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_TX_CHAR_UUID  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+
+let microbitDevice = null;
+let microbitServer = null;
+let microbitTxChar = null;
+
+function setMicrobitStatus(msg) {
+  mbText.innerText = "micro:bit: " + msg;
+}
+
+// Start camera
+async function setupCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
+  video.srcObject = stream;
+  return new Promise(resolve => {
+    video.onloadedmetadata = () => resolve(video);
+  });
+}
+
+// Load TFJS Model
+async function init() {
+  statusText.innerText = "Loading AI model…";
+  model = await cocoSsd.load();
+  statusText.innerText = "Starting camera…";
+  await setupCamera();
+  statusText.innerText = "Running detection…";
+  detectFrame();
+  autoConnectMicrobit();
+}
+init();
+
+// Detection Loop
+async function detectFrame() {
+  const predictions = await model.detect(video);
+
+  let people = predictions.filter(p => p.class === "person");
+  cntSpan.innerText = people.length;
+
+  if (people.length >= threshold) {
+    document.getElementById("alertBox").style.display = "block";
+    if (!soundMuted) alertSound.play();
+
+    sendToMicrobit("ALERT");
+  } else {
+    document.getElementById("alertBox").style.display = "none";
+    alertSound.pause();
+  }
+
+  requestAnimationFrame(detectFrame);
+}
+
+// Threshold
+function setThreshold() {
+  threshold = parseInt(document.getElementById("threshold").value);
+  alert("Threshold set to " + threshold);
+}
+
+// Sound toggle
+function toggleSound() {
+  soundMuted = !soundMuted;
+  alertSound.pause();
+}
+
+// Restart
+function restartAll() {
+  alertSound.pause();
+  microbitDevice = null;
+  mbText.innerText = "micro:bit: Not connected";
+  autoConnectMicrobit();
+}
+
+// ================================
+// micro:bit Bluetooth Functions
+// ================================
+
+// Auto-connect on load
+async function autoConnectMicrobit() {
+  try {
+    const devs = await navigator.bluetooth.getDevices();
+    if (devs.length > 0) {
+      microbitDevice = devs[0];
+      await connectToKnownMicrobit();
     }
-    function setMicrobitStatus(msg) {
-      microbitStatus.textContent = "micro:bit: " + msg;
-    }
+  } catch (e) {}
+}
 
-    function updateThresholdFromInput() {
-      const v = parseInt(thresholdInput.value, 10);
-      if (!Number.isNaN(v) && v > 0) {
-        threshold = v;
-        setStatus("Threshold set to " + threshold);
-      } else {
-        thresholdInput.value = threshold;
-      }
-    }
-    btnSetThreshold.addEventListener('click', updateThresholdFromInput);
+// Manual connect
+async function connectMicrobit() {
+  if (!navigator.bluetooth) {
+    alert("Bluetooth not supported.");
+    return;
+  }
 
-    btnMute.addEventListener('click', () => {
-      muted = !muted;
-      btnMute.textContent = muted ? "Unmute Sound" : "Mute Sound";
-      if (muted) {
-        if (alarmTimer !== null) {
-          clearTimeout(alarmTimer);
-          alarmTimer = null;
-        }
-        try { beepSound.pause(); } catch (e) {}
-      } else if (alertActive) {
-        startAlarmLoop();
-      }
+  try {
+    setMicrobitStatus("Scanning…");
+
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [NUS_SERVICE_UUID]
     });
 
-    // Restart button: also auto-connect micro:bit (within browser limits)
-    btnRestart.addEventListener('click', () => {
-      startApp(true);   // true = try auto-connect micro:bit
-    });
+    microbitDevice = device;
+    await connectToKnownMicrobit();
+  } catch (err) {
+    alert("Bluetooth Error: " + err);
+  }
+}
 
-    // Manual backup connect button
-    btnConnectMicrobit.addEventListener('click', () => {
-      connectMicrobit();
-    });
+// Connect to device
+async function connectToKnownMicrobit() {
+  try {
+    setMicrobitStatus("Connecting…");
+    microbitServer = await microbitDevice.gatt.connect();
 
-    // ====== Camera handling ======
-    async function stopCamera() {
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-      }
-    }
+    const service = await microbitServer.getPrimaryService(NUS_SERVICE_UUID);
+    microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
 
-    async function startCamera() {
-      await stopCamera();
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false
-        });
-        video.srcObject = stream;
+    setMicrobitStatus("Connected");
+  } catch (err) {
+    setMicrobitStatus("Failed");
+    alert("Microbit connect error: " + err);
+  }
+}
 
-        await new Promise(resolve => {
-          video.onloadedmetadata = () => {
-            overlay.width  = video.videoWidth || 640;
-            overlay.height = video.videoHeight || 480;
-            resolve();
-          };
-        });
+// Send alert to micro:bit
+async function sendToMicrobit(msg) {
+  if (!microbitTxChar) return;
 
-        setStatus("Camera started. Loading model…");
-      } catch (err) {
-        console.error(err);
-        setStatus("Camera error: " + err.message);
-        alert("Camera error: " + err.message);
-        throw err;
-      }
-    }
-
-    // ====== Continuous alarm loop (Option A) ======
-    function startAlarmLoop() {
-      if (!beepSound) return;
-      if (alarmTimer !== null) return;  // already looping
-
-      const loop = () => {
-        if (!alertActive || muted) {
-          alarmTimer = null;
-          try { beepSound.pause(); } catch (e) {}
-          return;
-        }
-        try {
-          beepSound.currentTime = 0;
-          beepSound.volume = 1.0;
-          const p = beepSound.play();
-          if (p && typeof p.then === "function") p.catch(() => {});
-        } catch (e) {}
-        alarmTimer = setTimeout(loop, 600); // repeat every 600 ms
-      };
-
-      loop();
-    }
-
-    function triggerAlert() {
-      alertBanner.style.display = "inline-block";
-      alertActive = true;
-
-      if (!muted) {
-        startAlarmLoop();
-      }
-
-      // send to micro:bit too
-      sendAlertToMicrobit();
-    }
-
-    function clearAlert() {
-      alertActive = false;
-      alertBanner.style.display = "none";
-
-      if (alarmTimer !== null) {
-        clearTimeout(alarmTimer);
-        alarmTimer = null;
-      }
-      try { beepSound.pause(); } catch (e) {}
-    }
-
-    function updateCountDisplay(count) {
-      cntEl.textContent = String(count);
-    }
-
-    // ====== Web Bluetooth (micro:bit Nordic UART) ======
-    const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-    const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // browser -> micro:bit
-
-    let microbitDevice = null;
-    let microbitServer = null;
-    let microbitTxChar = null;
-
-    async function connectMicrobit() {
-      if (!navigator.bluetooth) {
-        alert("Web Bluetooth not supported. Use Chrome on Android/desktop.");
-        return;
-      }
-
-      try {
-        setMicrobitStatus("Requesting device…");
-        const device = await navigator.bluetooth.requestDevice({
-          filters: [{ namePrefix: "BBC micro:bit" }],
-          optionalServices: [NUS_SERVICE_UUID]
-        });
-
-        microbitDevice = device;
-        microbitDevice.addEventListener("gattserverdisconnected", onMicrobitDisconnected);
-
-        setMicrobitStatus("Connecting…");
-        microbitServer = await device.gatt.connect();
-
-        const service = await microbitServer.getPrimaryService(NUS_SERVICE_UUID);
-        microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
-
-        setMicrobitStatus("Connected to " + (device.name || "micro:bit"));
-      } catch (err) {
-        console.error(err);
-        setMicrobitStatus("Not connected");
-        // user might cancel; no need to alert every time
-      }
-    }
-
-    function onMicrobitDisconnected() {
-      microbitServer = null;
-      microbitTxChar = null;
-      setMicrobitStatus("Disconnected");
-    }
-
-    async function sendAlertToMicrobit() {
-      if (!microbitTxChar) return; // not connected
-      try {
-        const enc = new TextEncoder();
-        await microbitTxChar.writeValue(enc.encode("ALERT\n"));
-        console.log("ALERT sent to micro:bit");
-      } catch (err) {
-        console.error("Error sending ALERT to micro:bit:", err);
-        setMicrobitStatus("Send error");
-      }
-    }
-
-    // ====== Detection loop ======
-    async function detectLoop() {
-      if (!running) return;
-      if (!model || !video.videoWidth) {
-        setTimeout(detectLoop, detectionIntervalMs);
-        return;
-      }
-
-      try {
-        ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
-
-        const predictions = await model.detect(video);
-        let personCount = 0;
-
-        ctx.lineWidth = 2;
-        ctx.font = "14px Arial";
-        ctx.textBaseline = "top";
-
-        predictions.forEach(p => {
-          if (p.class === "person" && p.score >= 0.5) {
-            personCount++;
-            const [x, y, w, h] = p.bbox;
-            ctx.strokeStyle = "rgba(0, 255, 0, 0.9)";
-            ctx.fillStyle   = "rgba(0, 255, 0, 0.3)";
-            ctx.strokeRect(x, y, w, h);
-            ctx.fillRect(x, y, w, 18);
-            ctx.fillStyle = "#000";
-            ctx.fillText(`Person ${Math.round(p.score * 100)}%`, x + 4, y + 2);
-          }
-        });
-
-        countHistory.push(personCount);
-        if (countHistory.length > historySize) countHistory.shift();
-        const avg = countHistory.reduce((a,b) => a + b, 0) / countHistory.length;
-        const smoothCount = Math.round(avg);
-
-        updateCountDisplay(smoothCount);
-
-        if (smoothCount >= threshold && !alertActive) {
-          triggerAlert();
-        } else if (smoothCount < threshold && alertActive) {
-          clearAlert();
-        }
-
-      } catch (err) {
-        console.error("Detection error:", err);
-        setStatus("Detection error: " + err.message);
-      }
-
-      setTimeout(detectLoop, detectionIntervalMs);
-    }
-
-    // ====== App startup ======
-    async function startApp(autoConnectMicrobit) {
-      try {
-        running = false;
-        await stopCamera();
-        clearAlert();
-        countHistory = [];
-        updateCountDisplay(0);
-        setStatus("Requesting camera…");
-
-        await startCamera();
-
-        if (!model) {
-          setStatus("Loading model (first time)…");
-          model = await cocoSsd.load();
-        }
-
-        setStatus("Running detection…");
-        running = true;
-        detectLoop();
-
-        // try to auto-connect micro:bit AFTER camera/model are ready
-        if (autoConnectMicrobit && !microbitTxChar) {
-          setMicrobitStatus("Tap a micro:bit in the Bluetooth dialog…");
-          await connectMicrobit(); // shows chooser due to this Restart tap
-        }
-      } catch (e) {
-        running = false;
-      }
-    }
-
-    setStatus("Tap “Restart (Camera + micro:bit)” to begin.");
-  </script>
+  let data = new TextEncoder().encode(msg + "\n");
+  try {
+    await microbitTxChar.writeValue(data);
+  } catch (e) {
+    console.log("Write fail:", e);
+  }
+}
+</script>
 </body>
 </html>
