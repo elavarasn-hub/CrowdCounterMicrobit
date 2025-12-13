@@ -16,7 +16,7 @@ body {
   text-align: center;
   padding: 10px;
 }
-h1 { font-size: 28px; margin-bottom: 6px; }
+h1 { font-size: 26px; margin-bottom: 6px; }
 
 #video {
   width: 95%;
@@ -29,9 +29,9 @@ h1 { font-size: 28px; margin-bottom: 6px; }
 button {
   padding: 10px 18px;
   border: none;
-  margin: 5px;
+  margin: 6px;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: bold;
 }
 
@@ -39,10 +39,11 @@ button {
 .blue { background: #3498db; color: #fff; }
 .orange { background: #f39c12; color: #fff; }
 .gray { background: #7f8c8d; color: #fff; }
+.red { background: #e74c3c; color: #fff; }
 
 #alertBox {
   margin-top: 12px;
-  padding: 15px;
+  padding: 14px;
   display: none;
   background: #ff0000;
   color: white;
@@ -59,8 +60,8 @@ button {
 
 <body>
 
-<h1>TFJS Crowd Counter + micro:bit<br>(Auto-Connect)</h1>
-<p>Counts people with AI and sends danger signal to micro:bit.</p>
+<h1>TFJS Crowd Counter + micro:bit</h1>
+<p>Camera → AI → Bluetooth → Alert</p>
 
 <video id="video" autoplay playsinline muted></video>
 
@@ -75,12 +76,16 @@ button {
 
 <button class="gray" onclick="toggleSound()">Mute Sound</button>
 <button class="blue" onclick="restartAll()">Restart (Camera + micro:bit)</button>
-<button class="orange" onclick="connectMicrobit()">Connect micro:bit (manual)</button>
+<button class="orange" onclick="connectMicrobit()">Connect micro:bit</button>
+
+<!-- ✅ TEST BUTTONS -->
+<button class="red" onclick="testAlert()">TEST ALERT (A)</button>
+<button class="gray" onclick="testNormal()">TEST NORMAL (B)</button>
 
 <div id="alertBox">⚠ ALERT — Danger Crowd Level! ⚠</div>
 
-<p id="status" style="margin-top:12px;">Running detection…</p>
-<p id="mb" style="margin-top:4px;color:#6cf;">micro:bit: Not connected</p>
+<p id="status">Running detection…</p>
+<p id="mb" style="color:#6cf;">micro:bit: Not connected</p>
 
 <script>
 let model;
@@ -93,34 +98,30 @@ let threshold = 3;
 let soundMuted = false;
 let lastState = "SAFE";
 
-// ---------- FAST BEEP (Web Audio API) ----------
+// ---------- FAST BEEP ----------
 let audioCtx = null;
-let beepInterval = null;
+let beepTimer = null;
 
-function startBeepFast() {
-  if (soundMuted || beepInterval) return;
-
+function startBeep() {
+  if (soundMuted || beepTimer) return;
   audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
 
-  beepInterval = setInterval(() => {
+  beepTimer = setInterval(() => {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-
     osc.type = "square";
-    osc.frequency.value = 900;      // sharp beep
+    osc.frequency.value = 900;
     gain.gain.value = 0.15;
-
     osc.connect(gain);
     gain.connect(audioCtx.destination);
-
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.12); // FAST beep
-  }, 220); // speed of beeping
+    osc.stop(audioCtx.currentTime + 0.12);
+  }, 220);
 }
 
 function stopBeep() {
-  clearInterval(beepInterval);
-  beepInterval = null;
+  clearInterval(beepTimer);
+  beepTimer = null;
 }
 
 // ---------- micro:bit UUIDs ----------
@@ -134,28 +135,19 @@ function setMicrobitStatus(msg) {
   mbText.innerText = "micro:bit: " + msg;
 }
 
-// ---------- CAMERA (FORCE BACK CAMERA) ----------
+// ---------- CAMERA (BACK CAMERA) ----------
 async function setupCamera() {
-  const constraints = {
-    video: {
-      facingMode: { exact: "environment" }
-    },
-    audio: false
-  };
-
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: "environment" } },
+      audio: false
+    });
   } catch {
-    // fallback if exact fails
     stream = await navigator.mediaDevices.getUserMedia({ video: true });
   }
-
   video.srcObject = stream;
-
-  return new Promise(resolve => {
-    video.onloadedmetadata = () => resolve(video);
-  });
+  return new Promise(r => video.onloadedmetadata = r);
 }
 
 // ---------- INIT ----------
@@ -168,37 +160,31 @@ async function init() {
 
   statusText.innerText = "Running detection…";
   detectFrame();
-  autoConnectMicrobit();
 }
 init();
 
 // ---------- DETECTION LOOP ----------
 async function detectFrame() {
-  const predictions = await model.detect(video);
-  const people = predictions.filter(p => p.class === "person");
+  const preds = await model.detect(video);
+  const people = preds.filter(p => p.class === "person");
 
   cntSpan.innerText = people.length;
 
   if (people.length >= threshold) {
     document.getElementById("alertBox").style.display = "block";
-
     if (lastState !== "ALERT") {
-      startBeepFast();
-      sendToMicrobit("A\n");   // ALERT
+      startBeep();
+      sendToMicrobit("A\n");
     }
-
     lastState = "ALERT";
   } else {
     document.getElementById("alertBox").style.display = "none";
-
     if (lastState !== "SAFE") {
       stopBeep();
-      sendToMicrobit("B\n");   // NORMAL
+      sendToMicrobit("B\n");
     }
-
     lastState = "SAFE";
   }
-
   requestAnimationFrame(detectFrame);
 }
 
@@ -215,46 +201,37 @@ function toggleSound() {
 
 function restartAll() {
   stopBeep();
-  microbitDevice = null;
+  lastState = "SAFE";
   setMicrobitStatus("Not connected");
-  autoConnectMicrobit();
+}
+
+// ---------- TEST FUNCTIONS ----------
+function testAlert() {
+  sendToMicrobit("A\n");
+  alert("TEST ALERT sent (A)");
+}
+
+function testNormal() {
+  sendToMicrobit("B\n");
+  alert("TEST NORMAL sent (B)");
 }
 
 // ---------- micro:bit ----------
-async function autoConnectMicrobit() {
-  try {
-    const devs = await navigator.bluetooth.getDevices();
-    if (devs.length > 0) {
-      microbitDevice = devs[0];
-      await connectToKnownMicrobit();
-    }
-  } catch {}
-}
-
 async function connectMicrobit() {
   try {
     setMicrobitStatus("Scanning…");
-
     microbitDevice = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: "BBC micro:bit" }],
       optionalServices: [NUS_SERVICE_UUID]
     });
 
-    await connectToKnownMicrobit();
-  } catch (e) {
-    alert("Bluetooth error: " + e);
-  }
-}
-
-async function connectToKnownMicrobit() {
-  try {
-    setMicrobitStatus("Connecting…");
     const server = await microbitDevice.gatt.connect();
     const service = await server.getPrimaryService(NUS_SERVICE_UUID);
     microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
+
     setMicrobitStatus("Connected");
   } catch (e) {
-    setMicrobitStatus("Failed");
+    alert("Bluetooth error: " + e);
   }
 }
 
@@ -266,5 +243,6 @@ async function sendToMicrobit(msg) {
   } catch {}
 }
 </script>
+
 </body>
 </html>
