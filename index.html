@@ -4,86 +4,88 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>micro:bit BLE UART Test</title>
+
 <style>
   body {
-    background:#111;
-    color:#eee;
-    font-family:Arial, sans-serif;
-    text-align:center;
-    padding:20px;
+    background: #111;
+    color: #eee;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
   }
   button {
-    padding:15px 25px;
-    margin:10px;
-    font-size:18px;
-    border-radius:10px;
-    border:none;
-    font-weight:bold;
+    padding: 15px 25px;
+    margin: 10px;
+    font-size: 18px;
+    border-radius: 10px;
+    border: none;
+    font-weight: bold;
   }
-  .a { background:#e74c3c; color:#fff; }
-  .b { background:#2ecc71; color:#fff; }
+  .alert { background: #e74c3c; color: white; }
+  .normal { background: #2ecc71; color: white; }
 </style>
 </head>
 
 <body>
-<h2>micro:bit BLE UART Test</h2>
 
-<button class="a" onclick="sendAlert()">TEST ALERT (A)</button>
-<button class="b" onclick="sendNormal()">TEST NORMAL (B)</button>
+<h2>micro:bit Bluetooth Test</h2>
+
+<button class="alert" onclick="sendA()">TEST ALERT (A)</button>
+<button class="normal" onclick="sendB()">TEST NORMAL (B)</button>
 
 <p id="status">Not connected</p>
 
 <script>
-const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_TX_CHAR = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
 let txChar = null;
 
-async function connectMicrobit() {
+async function connect() {
   const device = await navigator.bluetooth.requestDevice({
     acceptAllDevices: true,
-    optionalServices: [NUS_SERVICE_UUID]
+    optionalServices: [NUS_SERVICE]
   });
 
   const server = await device.gatt.connect();
-  const service = await server.getPrimaryService(NUS_SERVICE_UUID);
-  txChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
+  const service = await server.getPrimaryService(NUS_SERVICE);
+  txChar = await service.getCharacteristic(NUS_TX_CHAR);
 
   document.getElementById("status").innerText = "Connected";
 }
 
-// 🔑 RELIABLE SEND FUNCTION
-async function sendUART(msg) {
+// 🔑 RELIABLE UART SEND
+async function sendUART(value) {
   if (!txChar) {
-    await connectMicrobit();
+    await connect();
   }
 
-  const encoder = new TextEncoder();
+  const enc = new TextEncoder();
 
-  // send message
+  // send letter
   await txChar.writeValueWithoutResponse(
-    encoder.encode(msg)
+    enc.encode(value)
   );
 
-  // small delay
-  await new Promise(r => setTimeout(r, 30));
+  // short delay
+  await new Promise(r => setTimeout(r, 40));
 
-  // send newline (TWICE to be safe)
+  // send newline (CRLF)
   await txChar.writeValueWithoutResponse(
-    encoder.encode("\n\n")
+    enc.encode("\r\n")
   );
 }
 
-// buttons
-function sendAlert() {
+function sendA() {
   sendUART("A");
   alert("TEST ALERT sent (A)");
 }
 
-function sendNormal() {
+function sendB() {
   sendUART("B");
   alert("TEST NORMAL sent (B)");
 }
 </script>
+
 </body>
 </html>
