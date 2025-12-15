@@ -2,111 +2,169 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>micro:bit USB Alert Control</title>
+<title>Crowd Counter + micro:bit USB Alert</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- TensorFlow.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
 <style>
 body {
-    background: #111;
-    color: #eee;
-    font-family: Arial, sans-serif;
-    text-align: center;
-    padding: 20px;
+  margin: 0;
+  background: #111;
+  color: #eee;
+  font-family: Arial, sans-serif;
+  text-align: center;
 }
 
 h1 {
-    margin-bottom: 10px;
+  margin-top: 12px;
+}
+
+video {
+  width: 95%;
+  max-width: 420px;
+  border-radius: 12px;
+  border: 2px solid #333;
 }
 
 button {
-    font-size: 18px;
-    padding: 12px 20px;
-    margin: 10px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+  padding: 12px 18px;
+  margin: 6px;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
 }
 
-#connectBtn {
-    background: #1e88e5;
-    color: white;
+.connect { background: #1e88e5; color: white; }
+.alert   { background: #d32f2f; color: white; }
+.normal  { background: #388e3c; color: white; }
+.gray    { background: #555; color: white; }
+
+#alertBox {
+  display: none;
+  margin: 12px;
+  padding: 14px;
+  background: red;
+  font-size: 22px;
+  font-weight: bold;
+  border-radius: 10px;
+  animation: blink 0.6s infinite;
 }
 
-#alertBtn {
-    background: #d32f2f;
-    color: white;
-}
-
-#normalBtn {
-    background: #388e3c;
-    color: white;
-}
-
-#status {
-    margin-top: 15px;
-    font-size: 16px;
-    color: #90caf9;
+@keyframes blink {
+  50% { opacity: 0.3; }
 }
 </style>
 </head>
 
 <body>
 
-<h1>micro:bit USB Alert Control</h1>
-<p>PC only • USB Cable • Web Serial</p>
+<h1>AI Crowd Counter + micro:bit Alert</h1>
+<p>PC • USB • Web Serial</p>
 
-<button id="connectBtn">Connect micro:bit</button><br>
+<video id="video" autoplay playsinline muted></video>
 
-<button id="alertBtn" disabled>Send ALERT (A)</button>
-<button id="normalBtn" disabled>Send NORMAL (B)</button>
+<h2>People Count: <span id="count" style="color:#0f0">0</span></h2>
 
-<div id="status">Status: Not connected</div>
+<div>
+  Threshold:
+  <input id="threshold" type="number" value="3" style="width:60px;font-size:16px;">
+  <button class="gray" onclick="setThreshold()">Set</button>
+</div>
+
+<button class="connect" onclick="connectSerial()">Connect micro:bit</button><br>
+<button class="alert" onclick="sendCmd('A')">TEST ALERT (A)</button>
+<button class="normal" onclick="sendCmd('B')">TEST NORMAL (B)</button>
+
+<div id="alertBox">⚠ DANGER CROWD LEVEL ⚠</div>
+
+<p id="status">Status: Not connected</p>
 
 <script>
+let model;
 let port;
 let writer;
+let currentThreshold = 3;
+let alertState = false;
 
-const connectBtn = document.getElementById("connectBtn");
-const alertBtn   = document.getElementById("alertBtn");
-const normalBtn  = document.getElementById("normalBtn");
-const statusDiv  = document.getElementById("status");
+const video = document.getElementById("video");
+const countSpan = document.getElementById("count");
+const statusText = document.getElementById("status");
+const alertBox = document.getElementById("alertBox");
 
+// ---------------- CAMERA ----------------
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
+  video.srcObject = stream;
+  return new Promise(res => video.onloadedmetadata = res);
+}
+
+// ---------------- AI MODEL ----------------
+async function loadModel() {
+  model = await cocoSsd.load();
+}
+
+// ---------------- SERIAL ----------------
 async function connectSerial() {
-    try {
-        port = await navigator.serial.requestPort();
-        await port.open({ baudRate: 115200 });
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    statusText.innerText = "Status: micro:bit connected";
+  } catch (e) {
+    alert("Serial connection failed: " + e);
+  }
+}
 
-        writer = port.writable.getWriter();
+async function sendCmd(cmd) {
+  if (!writer) return;
+  await writer.write(new TextEncoder().encode(cmd + "\n"));
+}
 
-        statusDiv.innerText = "Status: micro:bit connected";
-        alertBtn.disabled = false;
-        normalBtn.disabled = false;
+// ---------------- THRESHOLD ----------------
+function setThreshold() {
+  currentThreshold = parseInt(document.getElementById("threshold").value);
+  alert("Threshold set to " + currentThreshold);
+}
 
-    } catch (err) {
-        alert("Connection failed: " + err);
+// ---------------- DETECTION LOOP ----------------
+async function detectLoop() {
+  const predictions = await model.detect(video);
+  const people = predictions.filter(p => p.class === "person");
+  countSpan.innerText = people.length;
+
+  if (people.length >= currentThreshold) {
+    alertBox.style.display = "block";
+    if (!alertState) {
+      sendCmd("A");
+      alertState = true;
     }
+  } else {
+    alertBox.style.display = "none";
+    if (alertState) {
+      sendCmd("B");
+      alertState = false;
+    }
+  }
+
+  requestAnimationFrame(detectLoop);
 }
 
-async function sendCommand(cmd) {
-    if (!writer) return;
-
-    const data = new TextEncoder().encode(cmd + "\n");
-    await writer.write(data);
+// ---------------- INIT ----------------
+async function init() {
+  await startCamera();
+  await loadModel();
+  detectLoop();
 }
 
-connectBtn.onclick = connectSerial;
-
-alertBtn.onclick = () => {
-    sendCommand("A");
-    statusDiv.innerText = "Status: ALERT sent (A)";
-};
-
-normalBtn.onclick = () => {
-    sendCommand("B");
-    statusDiv.innerText = "Status: NORMAL sent (B)";
-};
+init();
 </script>
 
 </body>
 </html>
-
