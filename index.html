@@ -1,95 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Micro:bit Alert Control (USB Serial)</title>
+<meta charset="UTF-8">
+<title>micro:bit USB Alert Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-  body {
+body {
     background: #111;
     color: #eee;
     font-family: Arial, sans-serif;
     text-align: center;
     padding: 20px;
-  }
-  h1 { margin-bottom: 10px; }
-  button {
-    padding: 14px 24px;
-    margin: 10px;
+}
+
+h1 {
+    margin-bottom: 10px;
+}
+
+button {
     font-size: 18px;
-    border-radius: 10px;
+    padding: 12px 20px;
+    margin: 10px;
     border: none;
-    font-weight: bold;
-  }
-  .connect { background: #3498db; color: white; }
-  .alert { background: #e74c3c; color: white; }
-  .normal { background: #2ecc71; color: white; }
-  #status {
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+#connectBtn {
+    background: #1e88e5;
+    color: white;
+}
+
+#alertBtn {
+    background: #d32f2f;
+    color: white;
+}
+
+#normalBtn {
+    background: #388e3c;
+    color: white;
+}
+
+#status {
     margin-top: 15px;
     font-size: 16px;
-    color: #6cf;
-  }
+    color: #90caf9;
+}
 </style>
 </head>
 
 <body>
 
-<h1>micro:bit Alert Control</h1>
-<p>USB OTG → Web Serial → micro:bit</p>
+<h1>micro:bit USB Alert Control</h1>
+<p>PC only • USB Cable • Web Serial</p>
 
-<button class="connect" onclick="connectSerial()">Connect micro:bit</button>
-<br>
-<button class="alert" onclick="sendAlert()">TEST ALERT (A)</button>
-<button class="normal" onclick="sendNormal()">TEST NORMAL (B)</button>
+<button id="connectBtn">Connect micro:bit</button><br>
 
-<p id="status">Status: Not connected</p>
+<button id="alertBtn" disabled>Send ALERT (A)</button>
+<button id="normalBtn" disabled>Send NORMAL (B)</button>
+
+<div id="status">Status: Not connected</div>
 
 <script>
 let port;
 let writer;
 
-// ---------- CONNECT ----------
+const connectBtn = document.getElementById("connectBtn");
+const alertBtn   = document.getElementById("alertBtn");
+const normalBtn  = document.getElementById("normalBtn");
+const statusDiv  = document.getElementById("status");
+
 async function connectSerial() {
-  if (!("serial" in navigator)) {
-    alert("Web Serial not supported. Use Chrome.");
-    return;
-  }
+    try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
 
-  try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+        writer = port.writable.getWriter();
 
-    writer = port.writable.getWriter();
-    document.getElementById("status").innerText =
-      "Status: Connected to micro:bit (USB)";
-  } catch (err) {
-    alert("Connection failed: " + err);
-  }
+        statusDiv.innerText = "Status: micro:bit connected";
+        alertBtn.disabled = false;
+        normalBtn.disabled = false;
+
+    } catch (err) {
+        alert("Connection failed: " + err);
+    }
 }
 
-// ---------- SEND DATA ----------
-async function sendLine(text) {
-  if (!writer) {
-    alert("Please connect micro:bit first");
-    return;
-  }
+async function sendCommand(cmd) {
+    if (!writer) return;
 
-  const data = new TextEncoder().encode(text + "\n");
-  await writer.write(data);
+    const data = new TextEncoder().encode(cmd + "\n");
+    await writer.write(data);
 }
 
-// ---------- BUTTON ACTIONS ----------
-function sendAlert() {
-  sendLine("A");
-  alert("Sent ALERT (A)");
-}
+connectBtn.onclick = connectSerial;
 
-function sendNormal() {
-  sendLine("B");
-  alert("Sent NORMAL (B)");
-}
+alertBtn.onclick = () => {
+    sendCommand("A");
+    statusDiv.innerText = "Status: ALERT sent (A)";
+};
+
+normalBtn.onclick = () => {
+    sendCommand("B");
+    statusDiv.innerText = "Status: NORMAL sent (B)";
+};
 </script>
 
 </body>
 </html>
+
