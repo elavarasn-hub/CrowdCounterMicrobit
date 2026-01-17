@@ -78,6 +78,9 @@ button {
 <p id="mb" style="margin-top:4px;color:#6cf;">micro:bit: Not connected</p>
 
 <script>
+/* ===============================
+   GLOBAL VARIABLES
+================================ */
 let model;
 let video = document.getElementById("video");
 let cntSpan = document.getElementById("cnt");
@@ -89,19 +92,89 @@ let soundMuted = false;
 let alertSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 alertSound.loop = true;
 
-// micro:bit Bluetooth UUIDs (UART)
-const NUS_SERVICE_UUID  = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const NUS_TX_CHAR_UUID  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+/* ===============================
+   micro:bit Bluetooth UUIDs
+================================ */
+const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
 let microbitDevice = null;
 let microbitServer = null;
 let microbitTxChar = null;
 
+/* ===============================
+   WebSocket (GLOBAL)
+================================ */
+window.ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
+let lastAlertState = false;
+
+ws.onopen = () => {
+  console.log("✅ Alert WebSocket connected");
+};
+
+ws.onerror = (err) => {
+  console.error("WebSocket error", err);
+};
+
+/* ===============================
+   SEND ALERT VIA WEBSOCKET
+================================ */
+function sendCrowdAlert(count) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const alertState = count >= threshold;
+
+  // prevent repeated spam
+  if (alertState === lastAlertState) return;
+  lastAlertState = alertState;
+
+  ws.send(JSON.stringify({
+    count: count,
+    alert: alertState
+  }));
+
+  console.log("📡 Alert sent:", { count, alert: alertState });
+}
+
+/* ===============================
+   RECEIVE ALERT (OTHER DEVICES)
+================================ */
+ws.onmessage = (event) => {
+  try {
+    const data = JSON.parse(event.data);
+
+    if (data.alert) {
+      alert("⚠ CROWD ALERT ⚠\nCount: " + data.count);
+      document.body.style.backgroundColor = "red";
+    } else {
+      document.body.style.backgroundColor = "";
+    }
+  } catch (e) {
+    console.error("Invalid WebSocket message", e);
+  }
+};
+
+/* ===============================
+   MICRO:BIT HELPERS
+================================ */
 function setMicrobitStatus(msg) {
   mbText.innerText = "micro:bit: " + msg;
 }
 
-// Start camera
+async function sendToMicrobit(msg) {
+  if (!microbitTxChar) return;
+
+  let data = new TextEncoder().encode(msg + "\n");
+  try {
+    await microbitTxChar.writeValue(data);
+  } catch (e) {
+    console.log("Write fail:", e);
+  }
+}
+
+/* ===============================
+   CAMERA + MODEL
+================================ */
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "environment" },
@@ -113,30 +186,39 @@ async function setupCamera() {
   });
 }
 
-// Load TFJS Model
 async function init() {
   statusText.innerText = "Loading AI model…";
   model = await cocoSsd.load();
+
   statusText.innerText = "Starting camera…";
   await setupCamera();
+
   statusText.innerText = "Running detection…";
   detectFrame();
   autoConnectMicrobit();
 }
 init();
 
-// Detection Loop
+/* ===============================
+   DETECTION LOOP
+================================ */
 async function detectFrame() {
   const predictions = await model.detect(video);
 
-  let people = predictions.filter(p => p.class === "person");
-  cntSpan.innerText = people.length;
+  const people = predictions.filter(p => p.class === "person");
+  const count = people.length;
 
-  if (people.length >= threshold) {
+  cntSpan.innerText = count;
+
+  // 🔥 AUTO ALERT TRIGGER
+  sendCrowdAlert(count);
+
+  if (count >= threshold) {
     document.getElementById("alertBox").style.display = "block";
     if (!soundMuted) alertSound.play();
 
-    sendToMicrobit("ALERT");
+    // ✅ KEEP LOCAL MICROBIT ALERT
+    sendToMicrobit("ALERT " + count);
   } else {
     document.getElementById("alertBox").style.display = "none";
     alertSound.pause();
@@ -145,31 +227,29 @@ async function detectFrame() {
   requestAnimationFrame(detectFrame);
 }
 
-// Threshold
+/* ===============================
+   UI CONTROLS
+================================ */
 function setThreshold() {
   threshold = parseInt(document.getElementById("threshold").value);
   alert("Threshold set to " + threshold);
 }
 
-// Sound toggle
 function toggleSound() {
   soundMuted = !soundMuted;
   alertSound.pause();
 }
 
-// Restart
 function restartAll() {
   alertSound.pause();
   microbitDevice = null;
-  mbText.innerText = "micro:bit: Not connected";
+  setMicrobitStatus("Not connected");
   autoConnectMicrobit();
 }
 
-// ================================
-// micro:bit Bluetooth Functions
-// ================================
-
-// Auto-connect on load
+/* ===============================
+   MICRO:BIT CONNECTION
+================================ */
 async function autoConnectMicrobit() {
   try {
     const devs = await navigator.bluetooth.getDevices();
@@ -180,7 +260,6 @@ async function autoConnectMicrobit() {
   } catch (e) {}
 }
 
-// Manual connect
 async function connectMicrobit() {
   if (!navigator.bluetooth) {
     alert("Bluetooth not supported.");
@@ -189,85 +268,34 @@ async function connectMicrobit() {
 
   try {
     setMicrobitStatus("Scanning…");
-
-    const device = await navigator.bluetooth.requestDevice({
+    microbitDevice = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: [NUS_SERVICE_UUID]
     });
-
-    microbitDevice = device;
     await connectToKnownMicrobit();
   } catch (err) {
     alert("Bluetooth Error: " + err);
   }
 }
 
-// Connect to device
 async function connectToKnownMicrobit() {
   try {
     setMicrobitStatus("Connecting…");
     microbitServer = await microbitDevice.gatt.connect();
-
     const service = await microbitServer.getPrimaryService(NUS_SERVICE_UUID);
     microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
-
     setMicrobitStatus("Connected");
   } catch (err) {
     setMicrobitStatus("Failed");
     alert("Microbit connect error: " + err);
   }
 }
-
-// Send alert to micro:bit
-async function sendToMicrobit(msg) {
-  if (!microbitTxChar) return;
-
-  let data = new TextEncoder().encode(msg + "\n");
-  try {
-    await microbitTxChar.writeValue(data);
-  } catch (e) {
-    console.log("Write fail:", e);
-  }
-  // ===============================
-// WebSocket Alert Receiver (NEW)
-// ===============================
-
-window.ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
-
-
-ws.onopen = () => {
-  console.log("Alert WebSocket connected");
-};
-
-ws.onmessage = (event) => {
-  try {
-    const data = JSON.parse(event.data);
-
-    if (data.alert) {
-      alert("⚠ CROWD ALERT ⚠\nCount: " + data.count);
-
-      // optional visual indicator
-      document.body.style.backgroundColor = "red";
-
-      // optional: send alert to micro:bit
-      sendToMicrobit("ALERT " + data.count);
-    } else {
-      document.body.style.backgroundColor = "";
-    }
-
-  } catch (e) {
-    console.error("Invalid WebSocket message", e);
-  }
-};
-
-ws.onerror = (err) => {
-  console.error("WebSocket error", err);
-};
-}
 </script>
+  
   <script src="ws-alert.js"></script>
 </body>
 </html>
+
 
 
 
