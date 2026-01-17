@@ -94,7 +94,7 @@ button {
 
 <script>
 /* ===============================
-   ROLE (FOOL-PROOF)
+   ROLE (URL BASED)
 ================================ */
 const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
@@ -131,16 +131,15 @@ const alertSound = new Audio(
 alertSound.loop = true;
 
 /* ===============================
+   POPUP CONTROL (CLIENT ONLY)
+================================ */
+let lastPopupTime = 0;
+const POPUP_COOLDOWN = 3000; // 3 seconds
+
+/* ===============================
    WEBSOCKET
 ================================ */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
-
-let lastAlertState = false;
-let lastAlertSentAt = 0;
-const ALERT_SEND_COOLDOWN = 3000; // 3 sec
-
-let lastPopupTime = 0;
-const POPUP_COOLDOWN = 10000; // 10 sec
 
 ws.onmessage = (e) => {
   const data = JSON.parse(e.data);
@@ -148,12 +147,14 @@ ws.onmessage = (e) => {
   if (MODE !== "client") return;
 
   if (data.alert) {
+    // 🔴 Immediate visual alert (NO throttling)
     document.getElementById("alertBox").style.display = "block";
     document.body.style.background = "red";
 
-    // 🔊 CONTINUOUS CLIENT BEEP
+    // 🔊 Continuous sound
     if (!soundMuted && alertSound.paused) alertSound.play();
 
+    // ⏱ Popup throttled to once per 3 sec
     const now = Date.now();
     if (now - lastPopupTime > POPUP_COOLDOWN) {
       alert("⚠ CROWD ALERT ⚠\nDanger crowd level detected!");
@@ -167,22 +168,16 @@ ws.onmessage = (e) => {
 };
 
 /* ===============================
-   MASTER ALERT SEND (THROTTLED)
+   MASTER ALERT SEND
 ================================ */
 function sendCrowdAlert(count) {
   if (MODE !== "master") return;
   if (ws.readyState !== WebSocket.OPEN) return;
 
-  const alertState = count >= threshold;
-  const now = Date.now();
-
-  if (alertState === lastAlertState &&
-      now - lastAlertSentAt < ALERT_SEND_COOLDOWN) return;
-
-  lastAlertState = alertState;
-  lastAlertSentAt = now;
-
-  ws.send(JSON.stringify({ count, alert: alertState }));
+  ws.send(JSON.stringify({
+    count: count,
+    alert: count >= threshold
+  }));
 }
 
 /* ===============================
@@ -252,10 +247,11 @@ function restartAll() {
 }
 
 /* ===============================
-   micro:bit (UNCHANGED CORE)
+   micro:bit
 ================================ */
 const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+
 let microbitDevice = null;
 let microbitTxChar = null;
 
