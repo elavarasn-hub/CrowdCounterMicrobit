@@ -16,14 +16,12 @@ body {
   text-align: center;
   padding: 10px;
 }
-
 #video {
   width: 95%;
   max-width: 430px;
   border-radius: 15px;
   border: 2px solid #444;
 }
-
 button {
   padding: 10px 18px;
   margin: 5px;
@@ -32,7 +30,6 @@ button {
   font-weight: bold;
   border: none;
 }
-
 .green { background:#2ecc71; color:#fff; }
 .blue { background:#3498db; color:#fff; }
 .orange { background:#f39c12; color:#fff; }
@@ -49,10 +46,7 @@ button {
   border-radius:12px;
   animation: blink 0.5s infinite;
 }
-
-@keyframes blink {
-  50% { opacity:0.25; }
-}
+@keyframes blink { 50% { opacity:0.25; } }
 
 #ribbon {
   display:none;
@@ -82,7 +76,6 @@ button {
   Threshold:
   <input id="threshold" type="number" value="3" style="width:60px">
   <button class="green" onclick="setThreshold()">Set</button><br>
-
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
   <button class="blue" onclick="restartAll()">Restart</button>
   <button class="orange" onclick="connectMicrobit()">Connect micro:bit</button>
@@ -142,6 +135,11 @@ alertSound.playbackRate = 4.0;
 alertSound.preload = "auto";
 
 /* ===============================
+   CLIENT ALERT STATE TRACKING
+================================ */
+let lastClientAlertState = false;
+
+/* ===============================
    WEBSOCKET
 ================================ */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
@@ -160,14 +158,18 @@ ws.onmessage = (e) => {
       alertSound.play();
     }
 
-    if (popupEnabled) {
+    // 🔔 POPUP ONLY ON STATE CHANGE (SAFE → ALERT)
+    if (!lastClientAlertState && popupEnabled) {
       alert("⚠ CROWD ALERT ⚠\nDanger crowd level detected!");
     }
+
+    lastClientAlertState = true;
 
   } else {
     document.getElementById("alertBox").style.display = "none";
     document.body.style.background = "#111";
     alertSound.pause();
+    lastClientAlertState = false;
   }
 };
 
