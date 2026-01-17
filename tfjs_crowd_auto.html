@@ -91,6 +91,7 @@ button {
 <!-- CLIENT CONTROLS -->
 <div id="clientControls">
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
+  <button class="blue" onclick="togglePopup()" id="popupBtn">Popup: OFF</button>
 </div>
 
 <div id="alertBox">⚠ CROWD ALERT ⚠</div>
@@ -100,7 +101,7 @@ button {
 
 <script>
 /* ===============================
-   ROLE (URL BASED – FOOL PROOF)
+   ROLE (URL BASED)
 ================================ */
 const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
@@ -130,13 +131,14 @@ let mbText = document.getElementById("mb");
 
 let threshold = 3;
 let soundMuted = false;
+let popupEnabled = false;
 
 /* 🔊 FAST CONTINUOUS BUZZER */
 const alertSound = new Audio(
   "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
 );
 alertSound.loop = true;
-alertSound.playbackRate = 4.0;   // 🔥 FAST BUZZER
+alertSound.playbackRate = 4.0;
 alertSound.preload = "auto";
 
 /* ===============================
@@ -157,6 +159,11 @@ ws.onmessage = (e) => {
       alertSound.currentTime = 0;
       alertSound.play();
     }
+
+    if (popupEnabled) {
+      alert("⚠ CROWD ALERT ⚠\nDanger crowd level detected!");
+    }
+
   } else {
     document.getElementById("alertBox").style.display = "none";
     document.body.style.background = "#111";
@@ -245,6 +252,12 @@ function toggleSound() {
   alertSound.pause();
 }
 
+function togglePopup() {
+  popupEnabled = !popupEnabled;
+  document.getElementById("popupBtn").innerText =
+    popupEnabled ? "Popup: ON" : "Popup: OFF";
+}
+
 function restartAll() {
   if (MODE !== "master") return;
   location.reload();
@@ -294,4 +307,3 @@ async function connectToKnownMicrobit() {
 
 </body>
 </html>
-
