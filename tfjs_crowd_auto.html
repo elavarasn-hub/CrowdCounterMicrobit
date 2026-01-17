@@ -71,20 +71,27 @@ button {
 
 <h2>People Count: <span id="cnt" style="color:#0f0">0</span></h2>
 
+<!-- MASTER CONTROLS -->
 <div id="masterControls">
   Threshold:
   <input id="threshold" type="number" value="3" style="width:60px">
-  <button class="green" onclick="setThreshold()">Set</button><br>
+  <button class="green" onclick="setThreshold()">Set Threshold</button><br>
+
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
+  <button class="blue" onclick="restartAll()">Restart (Camera + micro:bit)</button>
+  <button class="orange" onclick="connectMicrobit()">Connect micro:bit</button>
 </div>
 
+<!-- CLIENT CONTROLS -->
 <div id="clientControls">
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
   <button class="blue" onclick="togglePopup()" id="popupBtn">Popup: OFF</button>
 </div>
 
 <div id="alertBox">⚠ CROWD ALERT ⚠</div>
+
 <p id="status">Initializing…</p>
+<p id="mb" style="color:#6cf;">micro:bit: Not connected</p>
 
 <script>
 /* ================= ROLE ================= */
@@ -92,8 +99,11 @@ const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
 
 document.getElementById("modeInfo").innerText =
-  MODE === "master" ? "🟢 MASTER MODE" : "🔵 CLIENT MODE";
+  MODE === "master"
+    ? "🟢 MASTER MODE (AI + micro:bit)"
+    : "🔵 CLIENT MODE (Alert Viewer)";
 
+/* ================= UI VISIBILITY ================= */
 document.getElementById("masterControls").style.display =
   MODE === "master" ? "block" : "none";
 document.getElementById("clientControls").style.display =
@@ -101,21 +111,28 @@ document.getElementById("clientControls").style.display =
 if (MODE === "client") document.getElementById("video").style.display = "none";
 
 /* ================= GLOBALS ================= */
-let model, video = document.getElementById("video");
+let model;
+let video = document.getElementById("video");
+let cntSpan = document.getElementById("cnt");
+let statusText = document.getElementById("status");
+let mbText = document.getElementById("mb");
+
 let threshold = 3;
 let soundMuted = false;
-let popupEnabled = false;   // ✅ DEFAULT OFF
 
+/* 🔊 FAST CONTINUOUS BUZZER */
 const alertSound = new Audio(
   "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
 );
 alertSound.loop = true;
 alertSound.playbackRate = 4.0;
+alertSound.preload = "auto";
 
-/* ================= CLIENT ALERT STABILITY ================= */
+/* ================= CLIENT POPUP CONTROL ================= */
+let popupEnabled = false;           // DEFAULT OFF
 let alertStartTime = null;
 let popupShownForThisAlert = false;
-const ALERT_STABLE_MS = 1000; // 1 second
+const ALERT_STABLE_MS = 1000;
 
 /* ================= WEBSOCKET ================= */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
@@ -127,8 +144,8 @@ ws.onmessage = (e) => {
   const now = Date.now();
 
   if (data.alert) {
-    document.body.style.background = "red";
     document.getElementById("alertBox").style.display = "block";
+    document.body.style.background = "red";
 
     if (!soundMuted && alertSound.paused) {
       alertSound.currentTime = 0;
@@ -150,41 +167,72 @@ ws.onmessage = (e) => {
     }
 
   } else {
-    document.body.style.background = "#111";
     document.getElementById("alertBox").style.display = "none";
+    document.body.style.background = "#111";
     alertSound.pause();
     alertStartTime = null;
     popupShownForThisAlert = false;
   }
 };
 
-/* ================= MASTER AI ================= */
+/* ================= MASTER ALERT SEND ================= */
+function sendCrowdAlert(count) {
+  if (MODE !== "master") return;
+  if (ws.readyState !== WebSocket.OPEN) return;
+
+  ws.send(JSON.stringify({
+    count: count,
+    alert: count >= threshold
+  }));
+}
+
+/* ================= CAMERA + AI (MASTER) ================= */
 async function setupCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video:true });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
   video.srcObject = stream;
   return new Promise(r => video.onloadedmetadata = r);
 }
 
 async function init() {
   if (MODE === "master") {
+    statusText.innerText = "Loading AI…";
     model = await cocoSsd.load();
     await setupCamera();
+    statusText.innerText = "Running detection…";
     detectFrame();
+    autoConnectMicrobit();
+  } else {
+    statusText.innerText = "Client mode — waiting for alerts";
   }
 }
 init();
 
+/* ================= DETECTION LOOP ================= */
 async function detectFrame() {
   const preds = await model.detect(video);
   const count = preds.filter(p => p.class === "person").length;
-  document.getElementById("cnt").innerText = count;
 
-  ws.send(JSON.stringify({ alert: count >= threshold }));
+  cntSpan.innerText = count;
+  sendCrowdAlert(count);
 
-  if (count >= threshold && !soundMuted && alertSound.paused) {
-    alertSound.play();
+  if (count >= threshold) {
+    document.getElementById("alertBox").style.display = "block";
+    document.getElementById("ribbon").style.display = "block";
+
+    if (!soundMuted && alertSound.paused) {
+      alertSound.currentTime = 0;
+      alertSound.play();
+    }
+
+    sendToMicrobit("ALERT " + count);
+  } else {
+    document.getElementById("alertBox").style.display = "none";
+    document.getElementById("ribbon").style.display = "none";
+    alertSound.pause();
   }
-  if (count < threshold) alertSound.pause();
 
   requestAnimationFrame(detectFrame);
 }
@@ -192,6 +240,7 @@ async function detectFrame() {
 /* ================= UI ================= */
 function setThreshold() {
   threshold = parseInt(document.getElementById("threshold").value);
+  alert("Threshold set to " + threshold);
 }
 function toggleSound() {
   soundMuted = !soundMuted;
@@ -201,6 +250,49 @@ function togglePopup() {
   popupEnabled = !popupEnabled;
   document.getElementById("popupBtn").innerText =
     popupEnabled ? "Popup: ON" : "Popup: OFF";
+}
+function restartAll() {
+  if (MODE !== "master") return;
+  location.reload();
+}
+
+/* ================= micro:bit ================= */
+const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+
+let microbitDevice = null;
+let microbitTxChar = null;
+
+async function sendToMicrobit(msg) {
+  if (!microbitTxChar || MODE !== "master") return;
+  const data = new TextEncoder().encode(msg + "\n");
+  await microbitTxChar.writeValue(data);
+}
+
+async function autoConnectMicrobit() {
+  try {
+    const devs = await navigator.bluetooth.getDevices();
+    if (devs.length > 0) {
+      microbitDevice = devs[0];
+      await connectToKnownMicrobit();
+    }
+  } catch {}
+}
+
+async function connectMicrobit() {
+  if (MODE !== "master") return;
+  microbitDevice = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [NUS_SERVICE_UUID]
+  });
+  await connectToKnownMicrobit();
+}
+
+async function connectToKnownMicrobit() {
+  const server = await microbitDevice.gatt.connect();
+  const service = await server.getPrimaryService(NUS_SERVICE_UUID);
+  microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
+  mbText.innerText = "micro:bit: Connected";
 }
 </script>
 
