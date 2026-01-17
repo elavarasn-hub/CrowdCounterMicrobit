@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI Crowd Alert System (Master / Client)</title>
+<title>TFJS Crowd Counter + micro:bit (Auto-Connect)</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
@@ -16,53 +16,78 @@ body {
   text-align: center;
   padding: 10px;
 }
-h1 { font-size: 26px; }
+h1 { font-size: 28px; margin-bottom: 6px; }
 #video {
   width: 95%;
-  max-width: 420px;
-  border-radius: 12px;
+  max-width: 430px;
+  border-radius: 15px;
   border: 2px solid #444;
-  background: black;
+  background: #000;
 }
+button {
+  padding: 10px 18px;
+  border: none;
+  margin: 5px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.green { background: #2ecc71; color: #fff; }
+.blue { background: #3498db; color: #fff; }
+.orange { background: #f39c12; color: #fff; }
+.gray { background: #7f8c8d; color: #fff; }
+
 #alertBox {
-  display: none;
   margin-top: 12px;
-  padding: 14px;
-  background: red;
+  padding: 15px;
+  display: none;
+  background: #ff0000;
+  color: white;
   font-size: 22px;
   font-weight: bold;
-  border-radius: 10px;
-  animation: blink 0.6s infinite;
+  border-radius: 12px;
+  animation: blinker 0.55s linear infinite;
 }
-@keyframes blink { 50% { opacity: 0.3; } }
-.green { color: #0f0; }
-.blue { color: #6cf; }
+@keyframes blinker {
+  50% { opacity: 0.25; }
+}
 </style>
 </head>
-
 <body>
 
-<h1>AI Crowd Alert System</h1>
+<h1>TFJS Crowd Counter + micro:bit<br>(Auto-Connect)</h1>
 <p id="modeInfo"></p>
 
 <video id="video" autoplay playsinline></video>
 
-<h2>People Count: <span id="cnt" class="green">0</span></h2>
+<h2>People Count: <span id="cnt" style="color:#0f0">0</span></h2>
 
-<div id="alertBox">⚠ CROWD ALERT ⚠</div>
+<div>
+  Threshold:
+  <input id="threshold" type="number" value="3" style="width:65px;font-size:18px;text-align:center;">
+  <button class="green" onclick="setThreshold()">Set Threshold</button>
+</div>
 
-<p id="status">Initializing…</p>
-<p id="mb" class="blue">micro:bit: Not connected</p>
+<button class="gray" onclick="toggleSound()">Mute Sound</button>
+<button class="blue" onclick="restartAll()">Restart (Camera + micro:bit)</button>
+<button class="orange" onclick="connectMicrobit()">Connect micro:bit (manual)</button>
+
+<div id="alertBox">⚠ ALERT — Danger Crowd Level! ⚠</div>
+
+<p id="status" style="margin-top:12px;">Initializing…</p>
+<p id="mb" style="margin-top:4px;color:#6cf;">micro:bit: Not connected</p>
 
 <script>
 /* ===============================
-   MODE CONTROL
+   MASTER / CLIENT MODE
 ================================ */
 const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
 
 document.getElementById("modeInfo").innerText =
-  MODE === "master" ? "🟢 MASTER MODE (AI + Camera)" : "🔵 CLIENT MODE (Alert Only)";
+  MODE === "master"
+    ? "🟢 MASTER MODE (AI + Camera + micro:bit)"
+    : "🔵 CLIENT MODE (Alert Viewer Only)";
 
 /* ===============================
    GLOBAL VARIABLES
@@ -73,28 +98,30 @@ let cntSpan = document.getElementById("cnt");
 let statusText = document.getElementById("status");
 let mbText = document.getElementById("mb");
 let threshold = 3;
+let soundMuted = false;
 
 let alertSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 alertSound.loop = true;
 
 /* ===============================
-   MICRO:BIT UUIDs
+   micro:bit UUIDs
 ================================ */
 const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
 let microbitDevice = null;
+let microbitServer = null;
 let microbitTxChar = null;
 
 /* ===============================
-   WEBSOCKET (GLOBAL)
+   WEBSOCKET
 ================================ */
 window.ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
 let lastAlertState = false;
 
 ws.onopen = () => console.log("✅ WebSocket connected");
 
-ws.onerror = (e) => console.error("WebSocket error", e);
+ws.onerror = (err) => console.error("WebSocket error", err);
 
 /* ===============================
    SEND ALERT (MASTER ONLY)
@@ -111,14 +138,15 @@ function sendCrowdAlert(count) {
 }
 
 /* ===============================
-   RECEIVE ALERT (ALL CLIENTS)
+   RECEIVE ALERT (ALL DEVICES)
 ================================ */
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
+
   if (data.alert) {
     document.getElementById("alertBox").style.display = "block";
-    document.body.style.backgroundColor = "darkred";
-    alertSound.play();
+    document.body.style.backgroundColor = "red";
+    if (!soundMuted) alertSound.play();
   } else {
     document.getElementById("alertBox").style.display = "none";
     document.body.style.backgroundColor = "#111";
@@ -134,9 +162,14 @@ function setMicrobitStatus(msg) {
 }
 
 async function sendToMicrobit(msg) {
-  if (!microbitTxChar) return;
+  if (!microbitTxChar || MODE !== "master") return;
+
   let data = new TextEncoder().encode(msg + "\n");
-  await microbitTxChar.writeValue(data);
+  try {
+    await microbitTxChar.writeValue(data);
+  } catch (e) {
+    console.log("Write fail:", e);
+  }
 }
 
 /* ===============================
@@ -148,34 +181,40 @@ async function setupCamera() {
     audio: false
   });
   video.srcObject = stream;
-  return new Promise(r => video.onloadedmetadata = r);
+  return new Promise(resolve => {
+    video.onloadedmetadata = () => resolve(video);
+  });
 }
 
 async function init() {
   if (MODE === "master") {
     statusText.innerText = "Loading AI model…";
     model = await cocoSsd.load();
+
+    statusText.innerText = "Starting camera…";
     await setupCamera();
+
     statusText.innerText = "Running detection…";
     detectFrame();
     autoConnectMicrobit();
   } else {
-    statusText.innerText = "Waiting for alerts…";
+    statusText.innerText = "Client mode – waiting for alerts";
     video.style.display = "none";
   }
 }
 init();
 
 /* ===============================
-   DETECTION LOOP (MASTER)
+   DETECTION LOOP (MASTER ONLY)
 ================================ */
 async function detectFrame() {
+  if (MODE !== "master") return;
+
   const predictions = await model.detect(video);
   const people = predictions.filter(p => p.class === "person");
   const count = people.length;
 
   cntSpan.innerText = count;
-
   sendCrowdAlert(count);
 
   if (count >= threshold) {
@@ -186,21 +225,71 @@ async function detectFrame() {
 }
 
 /* ===============================
-   MICRO:BIT AUTO CONNECT
+   UI CONTROLS
+================================ */
+function setThreshold() {
+  threshold = parseInt(document.getElementById("threshold").value);
+  alert("Threshold set to " + threshold);
+}
+
+function toggleSound() {
+  soundMuted = !soundMuted;
+  alertSound.pause();
+}
+
+function restartAll() {
+  if (MODE !== "master") return;
+  alertSound.pause();
+  microbitDevice = null;
+  setMicrobitStatus("Not connected");
+  autoConnectMicrobit();
+}
+
+/* ===============================
+   MICRO:BIT CONNECTION
 ================================ */
 async function autoConnectMicrobit() {
+  if (MODE !== "master") return;
+
   try {
     const devs = await navigator.bluetooth.getDevices();
     if (devs.length > 0) {
       microbitDevice = devs[0];
-      const server = await microbitDevice.gatt.connect();
-      const service = await server.getPrimaryService(NUS_SERVICE_UUID);
-      microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
-      setMicrobitStatus("Connected");
+      await connectToKnownMicrobit();
     }
   } catch (e) {}
 }
-</script>
 
+async function connectMicrobit() {
+  if (MODE !== "master") {
+    alert("micro:bit allowed only in MASTER mode");
+    return;
+  }
+
+  try {
+    setMicrobitStatus("Scanning…");
+    microbitDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [NUS_SERVICE_UUID]
+    });
+    await connectToKnownMicrobit();
+  } catch (err) {
+    alert("Bluetooth Error: " + err);
+  }
+}
+
+async function connectToKnownMicrobit() {
+  try {
+    setMicrobitStatus("Connecting…");
+    microbitServer = await microbitDevice.gatt.connect();
+    const service = await microbitServer.getPrimaryService(NUS_SERVICE_UUID);
+    microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
+    setMicrobitStatus("Connected");
+  } catch (err) {
+    setMicrobitStatus("Failed");
+    alert("Microbit connect error: " + err);
+  }
+}
+</script>
 </body>
 </html>
