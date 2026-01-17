@@ -232,7 +232,8 @@ async function sendToMicrobit(msg) {
 // WebSocket Alert Receiver (NEW)
 // ===============================
 
-const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
+window.ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
+
 
 ws.onopen = () => {
   console.log("Alert WebSocket connected");
@@ -265,5 +266,6 @@ ws.onerror = (err) => {
 </script>
 </body>
 </html>
+
 
 
