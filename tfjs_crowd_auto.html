@@ -228,7 +228,43 @@ async function sendToMicrobit(msg) {
   } catch (e) {
     console.log("Write fail:", e);
   }
+  // ===============================
+// WebSocket Alert Receiver (NEW)
+// ===============================
+
+const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
+
+ws.onopen = () => {
+  console.log("Alert WebSocket connected");
+};
+
+ws.onmessage = (event) => {
+  try {
+    const data = JSON.parse(event.data);
+
+    if (data.alert) {
+      alert("⚠ CROWD ALERT ⚠\nCount: " + data.count);
+
+      // optional visual indicator
+      document.body.style.backgroundColor = "red";
+
+      // optional: send alert to micro:bit
+      sendToMicrobit("ALERT " + data.count);
+    } else {
+      document.body.style.backgroundColor = "";
+    }
+
+  } catch (e) {
+    console.error("Invalid WebSocket message", e);
+  }
+};
+
+ws.onerror = (err) => {
+  console.error("WebSocket error", err);
+};
+
 }
 </script>
 </body>
 </html>
+
