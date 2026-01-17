@@ -94,7 +94,7 @@ button {
 
 <script>
 /* ===============================
-   ROLE (URL BASED)
+   ROLE (URL BASED – FOOL PROOF)
 ================================ */
 const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
@@ -125,40 +125,29 @@ let mbText = document.getElementById("mb");
 let threshold = 3;
 let soundMuted = false;
 
+/* 🔊 ONE SHARED CONTINUOUS BUZZER */
 const alertSound = new Audio(
   "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
 );
 alertSound.loop = true;
+alertSound.playbackRate = 2.5; // fast, sharp
 
 /* ===============================
-   POPUP CONTROL (CLIENT ONLY)
-================================ */
-let lastPopupTime = 0;
-const POPUP_COOLDOWN = 3000; // 3 seconds
-
-/* ===============================
-   WEBSOCKET
+   WEBSOCKET (NO THROTTLING)
 ================================ */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
 
 ws.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-
   if (MODE !== "client") return;
 
+  const data = JSON.parse(e.data);
+
   if (data.alert) {
-    // 🔴 Immediate visual alert (NO throttling)
     document.getElementById("alertBox").style.display = "block";
     document.body.style.background = "red";
 
-    // 🔊 Continuous sound
-    if (!soundMuted && alertSound.paused) alertSound.play();
-
-    // ⏱ Popup throttled to once per 3 sec
-    const now = Date.now();
-    if (now - lastPopupTime > POPUP_COOLDOWN) {
-      alert("⚠ CROWD ALERT ⚠\nDanger crowd level detected!");
-      lastPopupTime = now;
+    if (!soundMuted && alertSound.paused) {
+      alertSound.play();
     }
   } else {
     document.getElementById("alertBox").style.display = "none";
@@ -217,12 +206,18 @@ async function detectFrame() {
   sendCrowdAlert(count);
 
   if (count >= threshold) {
-    if (!soundMuted && alertSound.paused) alertSound.play();
+    document.getElementById("alertBox").style.display = "block";
     document.getElementById("ribbon").style.display = "block";
+
+    if (!soundMuted && alertSound.paused) {
+      alertSound.play();
+    }
+
     sendToMicrobit("ALERT " + count);
   } else {
-    alertSound.pause();
+    document.getElementById("alertBox").style.display = "none";
     document.getElementById("ribbon").style.display = "none";
+    alertSound.pause();
   }
 
   requestAnimationFrame(detectFrame);
