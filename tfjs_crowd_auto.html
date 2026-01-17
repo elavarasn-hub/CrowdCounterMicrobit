@@ -21,42 +21,42 @@ body {
   max-width: 430px;
   border-radius: 15px;
   border: 2px solid #444;
-  background: #000;
 }
 button {
   padding: 10px 18px;
-  border: none;
   margin: 5px;
   border-radius: 8px;
   font-size: 16px;
   font-weight: bold;
+  border: none;
 }
-.green { background: #2ecc71; color: #fff; }
-.blue { background: #3498db; color: #fff; }
-.orange { background: #f39c12; color: #fff; }
-.gray { background: #7f8c8d; color: #fff; }
+.green { background:#2ecc71; color:#fff; }
+.blue { background:#3498db; color:#fff; }
+.orange { background:#f39c12; color:#fff; }
+.gray { background:#7f8c8d; color:#fff; }
 
 #alertBox {
-  display: none;
-  margin-top: 12px;
-  padding: 15px;
-  background: red;
-  font-size: 22px;
-  font-weight: bold;
-  border-radius: 12px;
+  display:none;
+  margin-top:12px;
+  padding:15px;
+  background:red;
+  color:white;
+  font-size:22px;
+  font-weight:bold;
+  border-radius:12px;
   animation: blink 0.6s infinite;
 }
-@keyframes blink { 50% { opacity: 0.25; } }
+@keyframes blink { 50% { opacity:0.3; } }
 
-#alertSentRibbon {
-  display: none;
-  margin: 8px auto;
-  padding: 6px 12px;
-  background: #b30000;
-  color: white;
-  font-weight: bold;
-  border-radius: 6px;
-  font-size: 14px;
+#ribbon {
+  display:none;
+  margin:8px auto;
+  padding:6px 12px;
+  background:#b30000;
+  color:white;
+  font-weight:bold;
+  border-radius:6px;
+  width:fit-content;
 }
 </style>
 </head>
@@ -65,26 +65,28 @@ button {
 
 <h1>TFJS Crowd Counter + micro:bit</h1>
 <p id="modeInfo"></p>
+<div id="ribbon">🚨 ALERT SENT TO CLIENTS</div>
 
 <video id="video" autoplay playsinline></video>
 
 <h2>People Count: <span id="cnt" style="color:#0f0">0</span></h2>
 
+<!-- MASTER CONTROLS -->
 <div id="masterControls">
   Threshold:
-  <input id="threshold" type="number" value="3" style="width:65px;font-size:18px;text-align:center;">
-  <button class="green" onclick="setThreshold()">Set Threshold</button><br>
+  <input id="threshold" type="number" value="3" style="width:60px">
+  <button class="green" onclick="setThreshold()">Set</button><br>
 
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
-  <button class="blue" onclick="restartAll()">Restart (Camera + micro:bit)</button>
+  <button class="blue" onclick="restartAll()">Restart</button>
   <button class="orange" onclick="connectMicrobit()">Connect micro:bit</button>
 </div>
 
+<!-- CLIENT CONTROLS -->
 <div id="clientControls">
   <button class="gray" onclick="toggleSound()">Mute Sound</button>
 </div>
 
-<div id="alertSentRibbon">🚨 ALERT SENT TO CLIENTS</div>
 <div id="alertBox">⚠ CROWD ALERT ⚠</div>
 
 <p id="status">Initializing…</p>
@@ -92,7 +94,7 @@ button {
 
 <script>
 /* ===============================
-   MODE
+   ROLE (FOOL-PROOF)
 ================================ */
 const params = new URLSearchParams(window.location.search);
 const MODE = params.get("mode") === "master" ? "master" : "client";
@@ -119,67 +121,66 @@ let video = document.getElementById("video");
 let cntSpan = document.getElementById("cnt");
 let statusText = document.getElementById("status");
 let mbText = document.getElementById("mb");
+
 let threshold = 3;
 let soundMuted = false;
 
-let alertSound = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+const alertSound = new Audio(
+  "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+);
 alertSound.loop = true;
-
-let clientPopupShown = false;
-
-/* ===============================
-   micro:bit UUIDs
-================================ */
-const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-
-let microbitDevice = null;
-let microbitTxChar = null;
 
 /* ===============================
    WEBSOCKET
 ================================ */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
+
 let lastAlertState = false;
+let lastAlertSentAt = 0;
+const ALERT_SEND_COOLDOWN = 3000; // 3 sec
 
-ws.onopen = () => console.log("WebSocket connected");
+let lastPopupTime = 0;
+const POPUP_COOLDOWN = 10000; // 10 sec
 
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
+ws.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+
+  if (MODE !== "client") return;
 
   if (data.alert) {
     document.getElementById("alertBox").style.display = "block";
-    document.body.style.backgroundColor = "red";
+    document.body.style.background = "red";
 
-    if (MODE === "client" && !soundMuted) {
-      alertSound.play(); // 🔊 continuous beep
-    }
+    // 🔊 CONTINUOUS CLIENT BEEP
+    if (!soundMuted && alertSound.paused) alertSound.play();
 
-    if (MODE === "client" && !clientPopupShown) {
-      clientPopupShown = true;
+    const now = Date.now();
+    if (now - lastPopupTime > POPUP_COOLDOWN) {
       alert("⚠ CROWD ALERT ⚠\nDanger crowd level detected!");
+      lastPopupTime = now;
     }
   } else {
     document.getElementById("alertBox").style.display = "none";
-    document.body.style.backgroundColor = "#111";
-
-    if (MODE === "client") {
-      alertSound.pause();
-      clientPopupShown = false;
-    }
+    document.body.style.background = "#111";
+    alertSound.pause();
   }
 };
 
 /* ===============================
-   SEND ALERT (MASTER ONLY)
+   MASTER ALERT SEND (THROTTLED)
 ================================ */
 function sendCrowdAlert(count) {
   if (MODE !== "master") return;
   if (ws.readyState !== WebSocket.OPEN) return;
 
   const alertState = count >= threshold;
-  if (alertState === lastAlertState) return;
+  const now = Date.now();
+
+  if (alertState === lastAlertState &&
+      now - lastAlertSentAt < ALERT_SEND_COOLDOWN) return;
+
   lastAlertState = alertState;
+  lastAlertSentAt = now;
 
   ws.send(JSON.stringify({ count, alert: alertState }));
 }
@@ -221,19 +222,19 @@ async function detectFrame() {
   sendCrowdAlert(count);
 
   if (count >= threshold) {
-    if (!soundMuted) alertSound.play();
-    document.getElementById("alertSentRibbon").style.display = "block";
+    if (!soundMuted && alertSound.paused) alertSound.play();
+    document.getElementById("ribbon").style.display = "block";
     sendToMicrobit("ALERT " + count);
   } else {
     alertSound.pause();
-    document.getElementById("alertSentRibbon").style.display = "none";
+    document.getElementById("ribbon").style.display = "none";
   }
 
   requestAnimationFrame(detectFrame);
 }
 
 /* ===============================
-   UI ACTIONS
+   UI
 ================================ */
 function setThreshold() {
   threshold = parseInt(document.getElementById("threshold").value);
@@ -247,22 +248,20 @@ function toggleSound() {
 
 function restartAll() {
   if (MODE !== "master") return;
-  alertSound.pause();
-  microbitDevice = null;
-  mbText.innerText = "micro:bit: Not connected";
-  autoConnectMicrobit();
+  location.reload();
 }
 
 /* ===============================
-   micro:bit
+   micro:bit (UNCHANGED CORE)
 ================================ */
-function setMicrobitStatus(msg) {
-  mbText.innerText = "micro:bit: " + msg;
-}
+const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_TX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+let microbitDevice = null;
+let microbitTxChar = null;
 
 async function sendToMicrobit(msg) {
   if (!microbitTxChar || MODE !== "master") return;
-  let data = new TextEncoder().encode(msg + "\n");
+  const data = new TextEncoder().encode(msg + "\n");
   await microbitTxChar.writeValue(data);
 }
 
@@ -289,7 +288,7 @@ async function connectToKnownMicrobit() {
   const server = await microbitDevice.gatt.connect();
   const service = await server.getPrimaryService(NUS_SERVICE_UUID);
   microbitTxChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
-  setMicrobitStatus("Connected");
+  mbText.innerText = "micro:bit: Connected";
 }
 </script>
 </body>
