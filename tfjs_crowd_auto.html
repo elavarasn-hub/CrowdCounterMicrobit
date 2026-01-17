@@ -16,12 +16,14 @@ body {
   text-align: center;
   padding: 10px;
 }
+
 #video {
   width: 95%;
   max-width: 430px;
   border-radius: 15px;
   border: 2px solid #444;
 }
+
 button {
   padding: 10px 18px;
   margin: 5px;
@@ -30,6 +32,7 @@ button {
   font-weight: bold;
   border: none;
 }
+
 .green { background:#2ecc71; color:#fff; }
 .blue { background:#3498db; color:#fff; }
 .orange { background:#f39c12; color:#fff; }
@@ -44,9 +47,12 @@ button {
   font-size:22px;
   font-weight:bold;
   border-radius:12px;
-  animation: blink 0.6s infinite;
+  animation: blink 0.5s infinite;
 }
-@keyframes blink { 50% { opacity:0.3; } }
+
+@keyframes blink {
+  50% { opacity:0.25; }
+}
 
 #ribbon {
   display:none;
@@ -125,15 +131,16 @@ let mbText = document.getElementById("mb");
 let threshold = 3;
 let soundMuted = false;
 
-/* 🔊 ONE SHARED CONTINUOUS BUZZER */
+/* 🔊 FAST CONTINUOUS BUZZER */
 const alertSound = new Audio(
   "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
 );
 alertSound.loop = true;
-alertSound.playbackRate = 2.5; // fast, sharp
+alertSound.playbackRate = 3.0;   // 🔥 FAST BUZZER
+alertSound.preload = "auto";
 
 /* ===============================
-   WEBSOCKET (NO THROTTLING)
+   WEBSOCKET
 ================================ */
 const ws = new WebSocket("wss://ws-relay-zqzk.onrender.com");
 
@@ -147,6 +154,7 @@ ws.onmessage = (e) => {
     document.body.style.background = "red";
 
     if (!soundMuted && alertSound.paused) {
+      alertSound.currentTime = 0;
       alertSound.play();
     }
   } else {
@@ -210,6 +218,7 @@ async function detectFrame() {
     document.getElementById("ribbon").style.display = "block";
 
     if (!soundMuted && alertSound.paused) {
+      alertSound.currentTime = 0;
       alertSound.play();
     }
 
@@ -282,5 +291,6 @@ async function connectToKnownMicrobit() {
   mbText.innerText = "micro:bit: Connected";
 }
 </script>
+
 </body>
 </html>
